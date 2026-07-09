@@ -1,0 +1,9 @@
+{
+  "published_at_utc": "2026-07-09T06:06:17+00:00",
+  "dashboard_dir": "C:\\Users\\Administrator\\Desktop\\KOL素材分析",
+  "source_html": "C:\\Users\\Administrator\\Desktop\\KOL素材分析\\SKT-合创内容数据看板_自动版.html",
+  "generator": "C:\\Users\\Administrator\\Desktop\\KOL素材分析\\generate_hechuang_dashboard_from_gsheet.py",
+  "site_url": "https://zttinsley-jpg.github.io/skt-codex-analyst/",
+  "site_entry": "index.html",
+  "auto_refresh_on_publish": true
+}
