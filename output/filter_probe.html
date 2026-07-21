@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Filter Probe</title>
+  <style>
+    body { font-family: "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; }
+    pre { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; }
+    iframe { width: 1440px; height: 2200px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <pre id="log">loading...</pre>
+  <iframe id="report" src="./april_review_interactive.html"></iframe>
+  <script>
+    (function () {
+      function waitForReady(win, tries = 0) {
+        if (tries > 200) {
+          document.getElementById("log").textContent = "timeout";
+          return;
+        }
+        try {
+          if (win && win.state && typeof win.renderAll === "function" && win.document.getElementById("category-gmv-cvr-chart")) {
+            run(win);
+            return;
+          }
+        } catch (err) {}
+        setTimeout(() => waitForReady(win, tries + 1), 200);
+      }
+
+      function graphSummary(doc, id) {
+        const el = doc.getElementById(id);
+        if (!el) return { exists: false };
+        const traces = Array.isArray(el.data) ? el.data.map((t) => ({
+          name: t.name,
+          x: Array.isArray(t.x) ? t.x.slice(0, 5) : [],
+          y: Array.isArray(t.y) ? t.y.slice(0, 5) : []
+        })) : [];
+        return { exists: true, traces };
+      }
+
+      function tableSummary(doc, id) {
+        const holder = doc.getElementById(id);
+        if (!holder) return { exists: false };
+        const rows = Array.from(holder.querySelectorAll("tbody tr")).slice(0, 5).map((tr) =>
+          Array.from(tr.querySelectorAll("td")).slice(0, 4).map((td) => td.textContent.trim())
+        );
+        return { exists: true, rows };
+      }
+
+      function snapshot(win, label) {
+        const doc = win.document;
+        return {
+          label,
+          filterSummary: doc.getElementById("filter-summary")?.textContent || "",
+          categoryChart: graphSummary(doc, "category-gmv-cvr-chart"),
+          productChart: graphSummary(doc, "product-gmv-cvr-chart"),
+          moduleChart: graphSummary(doc, "module-gmv-cvr-chart"),
+          categoryTable: tableSummary(doc, "category-table"),
+          productTable: tableSummary(doc, "product-table")
+        };
+      }
+
+      function applyFilters(win, filters, topN) {
+        win.state.filters.shop = filters.shop || [];
+        win.state.filters.group = filters.group || [];
+        win.state.filters.category = filters.category || [];
+        win.state.filters.product = filters.product || [];
+        if (topN) win.state.topN = topN;
+        win.renderAll();
+      }
+
+      function run(win) {
+        const results = [];
+        results.push(snapshot(win, "base"));
+        applyFilters(win, { shop: [], group: [], category: [], product: ["美白面膜"] }, 10);
+        results.push(snapshot(win, "product=美白面膜"));
+        applyFilters(win, { shop: [], group: [], category: ["面霜"], product: [] }, 10);
+        results.push(snapshot(win, "category=面霜"));
+        applyFilters(win, { shop: ["旗舰店"], group: [], category: [], product: [] }, 10);
+        results.push(snapshot(win, "shop=旗舰店"));
+        applyFilters(win, { shop: [], group: ["护肤"], category: [], product: [] }, 10);
+        results.push(snapshot(win, "group=护肤"));
+        applyFilters(win, { shop: [], group: [], category: [], product: [] }, 3);
+        results.push(snapshot(win, "topN=3"));
+        document.getElementById("log").textContent = JSON.stringify(results, null, 2);
+      }
+
+      const iframe = document.getElementById("report");
+      iframe.addEventListener("load", function () {
+        waitForReady(iframe.contentWindow);
+      });
+    })();
+  </script>
+</body>
+</html>

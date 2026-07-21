@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SKT 看板模板</title>
+  <style>
+    :root {
+      --ink: #1f2933;
+      --muted: #65758b;
+      --line: #d8dee8;
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --brand: #176b87;
+      --accent: #d95f43;
+      --good: #24734d;
+      --bad: #b5473a;
+      --soft: #eaf2f6;
+      --new: #fff3c4;
+      --new-line: #e0a321;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+    }
+
+    header {
+      padding: 28px 32px 22px;
+      background: linear-gradient(180deg, #ffffff 0%, #eef4f7 100%);
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h2 { margin: 0 0 14px; font-size: 20px; }
+    h3 { margin: 22px 0 10px; font-size: 16px; }
+    p { margin: 6px 0; color: var(--muted); }
+    code {
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #eef3f7;
+      color: #355164;
+    }
+
+    main {
+      max-width: 1720px;
+      margin: 0 auto;
+      padding: 22px 32px 40px;
+    }
+
+    section {
+      margin-bottom: 18px;
+      padding: 18px;
+      overflow: visible;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 10px;
+      margin-top: 16px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .controls label {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    input[type="date"], select {
+      height: 36px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    button {
+      height: 36px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--brand);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .ghost-btn {
+      background: #eef2f6;
+      color: #223042;
+    }
+
+    .controls-meta {
+      display: grid;
+      gap: 6px;
+      align-self: stretch;
+      min-width: 190px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fbfd;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #edf8f1;
+      color: var(--good);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .controls-filter-panel {
+      display: flex;
+      flex: 1 1 320px;
+      flex-wrap: wrap;
+      align-items: center;
+      align-content: center;
+      gap: 10px;
+      min-height: 66px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .active-filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border: 1px solid #d8dee8;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: #223042;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .small { font-size: 12px; }
+
+    .note {
+      margin: 10px 0 14px;
+      padding: 12px 14px;
+      border-left: 4px solid var(--brand);
+      border-radius: 6px;
+      background: var(--soft);
+      color: #284253;
+    }
+
+    .cmp-cards, .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .cmp-card, .stat-card {
+      min-height: 104px;
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .cmp-card.active {
+      border-color: var(--brand);
+      box-shadow: inset 0 0 0 2px var(--brand);
+      background: #f7fbfd;
+    }
+
+    .cmp-card span, .stat-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .cmp-card b, .stat-card b {
+      display: block;
+      margin-top: 8px;
+      font-size: clamp(18px, 1.45vw, 24px);
+      line-height: 1.15;
+      overflow-wrap: anywhere;
+    }
+
+    .cmp-card small {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .delta-up { color: var(--bad) !important; font-weight: 700; }
+    .delta-down { color: var(--good) !important; font-weight: 700; }
+    .delta-flat { color: var(--muted) !important; font-weight: 700; }
+
+    .trend-canvas-wrap {
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, #fcfdff 0%, #f7fafc 100%);
+    }
+
+    .trend-chart {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+      gap: 10px;
+      align-items: end;
+      min-height: 240px;
+    }
+
+    .trend-col {
+      display: grid;
+      gap: 8px;
+      justify-items: center;
+    }
+
+    .trend-bars {
+      display: flex;
+      align-items: end;
+      gap: 6px;
+      width: 100%;
+      min-height: 180px;
+    }
+
+    .trend-bar {
+      flex: 1;
+      min-height: 8px;
+      border-radius: 6px 6px 0 0;
+    }
+
+    .trend-bar.current { background: var(--brand); }
+    .trend-bar.compare { background: #b7c8d3; }
+    .trend-label {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #edf0f5;
+      text-align: center;
+      vertical-align: top;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f2f5f8;
+      color: #354152;
+    }
+
+    td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+    tr:hover td { background: #fbfcfe; }
+    tr.new-material td { background: #fff9df; }
+    tr.new-material td:first-child { border-left: 4px solid var(--new-line); }
+
+    .cell-main { display: block; }
+    .cell-sub {
+      margin-top: 4px;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .table-wrap {
+      max-height: 560px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .table-wrap-auto {
+      max-height: none;
+      overflow: visible;
+    }
+
+    .product-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .empty {
+      padding: 24px 16px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @media (max-width: 980px) {
+      main, header { padding-left: 18px; padding-right: 18px; }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 640px) {
+      .cmp-cards, .stat-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="pageTitle">SKT 新看板模板</h1>
+    <p id="pageSubtitle">查询周期：2026-07-01 至 2026-07-16；环比周期：2026-06-01 至 2026-06-16。</p>
+    <div class="controls">
+      <label>查询开始<input id="qStart" type="date" value="2026-07-01"></label>
+      <label>查询结束<input id="qEnd" type="date" value="2026-07-16"></label>
+      <label>环比开始<input id="cStart" type="date" value="2026-06-01"></label>
+      <label>环比结束<input id="cEnd" type="date" value="2026-06-16"></label>
+      <label>素材发布时间开始<input id="mStart" type="date" value=""></label>
+      <label>素材发布时间结束<input id="mEnd" type="date" value=""></label>
+      <button type="button">应用时间段</button>
+      <button class="ghost-btn" type="button">立即刷新</button>
+      <div class="controls-meta">
+        <span class="status-pill"><span class="status-dot"></span>模板模式</span>
+        <span class="small" id="updateTime">最近更新：2026/07/21 12:00</span>
+      </div>
+      <div class="controls-filter-panel" id="activeFilterSummary"></div>
+    </div>
+
+    <section id="overviewSection">
+      <h2 id="overviewTitle">基础数据总览</h2>
+      <p class="small" id="overviewDescription">这里保留了原合创看板的头部结构。后面我们可以按你的新需求替换口径、字段和联动方式。</p>
+      <div class="table-wrap" id="overviewTable"></div>
+    </section>
+  </header>
+
+  <main>
+    <section>
+      <h2>环比变化看板</h2>
+      <p class="small">保留原页面的指标卡 + 趋势图 + 多个对比表布局，方便后面按你的新分析逻辑替换。</p>
+      <div id="compareCards" class="cmp-cards"></div>
+      <div class="trend-canvas-wrap">
+        <div class="trend-chart" id="trendChart"></div>
+      </div>
+
+      <h3>分系统类型环比</h3>
+      <div class="table-wrap" id="systemCompare"></div>
+
+      <h3>分平台环比</h3>
+      <div class="table-wrap" id="platformCompare"></div>
+
+      <h3>分产品环比</h3>
+      <div class="table-wrap table-wrap-auto" id="productCompare"></div>
+    </section>
+
+    <section>
+      <h2>分产品素材列表</h2>
+      <div class="product-toolbar">
+        <label>产品视角
+          <select id="productPicker"></select>
+        </label>
+        <span class="small">这一块先保留原看板的产品切换使用习惯。</span>
+      </div>
+      <div class="grid-2">
+        <div>
+          <h3>产品摘要</h3>
+          <div class="stat-grid" id="productSummary"></div>
+        </div>
+        <div>
+          <h3>素材表现</h3>
+          <div class="table-wrap" id="materialTable"></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>数据审计</h2>
+      <div class="note">
+        当前是模板页，数据结构已经抽成一个统一的 <code>embeddedData</code> 对象。
+        下一步你告诉我新看板要看什么，我可以直接在这个模板上改字段、模块、图表和联动。
+      </div>
+      <p id="auditSource"></p>
+      <p id="auditStats"></p>
+      <p class="small"><code id="auditMeta"></code></p>
+    </section>
+  </main>
+
+  <script id="embeddedData" type="application/json">
+    {
+      "meta": {
+        "title": "SKT 新看板模板",
+        "subtitle": "查询周期：2026-07-01 至 2026-07-16；环比周期：2026-06-01 至 2026-06-16。",
+        "updatedAt": "2026/07/21 12:00",
+        "overviewTitle": "基础数据总览",
+        "overviewDescription": "模板默认沿用现有合创看板的观感与模块顺序。",
+        "queryFiles": ["ALL_data"],
+        "compareFiles": ["ALL_data", "DMS"]
+      },
+      "activeFilters": [
+        "广告类型：合创广告",
+        "国家：Thailand",
+        "模板状态：可复用"
+      ],
+      "overviewRows": [
+        { "name": "核心投放口径", "spend": "29,785.25", "gmv": "93,814.30", "roi": "3.15", "orders": "9,028", "impressions": "105,609,519" },
+        { "name": "备用口径示例", "spend": "12,460.10", "gmv": "38,900.20", "roi": "3.12", "orders": "3,640", "impressions": "42,103,882" }
+      ],
+      "compareCards": [
+        { "label": "花费", "value": "29,785.25", "delta": "+4.1%", "direction": "up" },
+        { "label": "GMV", "value": "93,814.30", "delta": "+2.5%", "direction": "up" },
+        { "label": "ROI", "value": "3.15", "delta": "-1.5%", "direction": "down", "active": true },
+        { "label": "曝光", "value": "105,609,519", "delta": "+1.7%", "direction": "up" },
+        { "label": "CTR", "value": "0.22%", "delta": "-24.3%", "direction": "down" },
+        { "label": "CPA", "value": "3.30", "delta": "-5.4%", "direction": "down" }
+      ],
+      "trend": [
+        { "label": "07-01", "current": 62, "compare": 58 },
+        { "label": "07-04", "current": 71, "compare": 64 },
+        { "label": "07-07", "current": 69, "compare": 72 },
+        { "label": "07-10", "current": 88, "compare": 73 },
+        { "label": "07-13", "current": 76, "compare": 69 },
+        { "label": "07-16", "current": 81, "compare": 79 }
+      ],
+      "tables": {
+        "system": [
+          { "name": "Regular KOL 系统", "spend": "19,572.50", "spendShare": "65.71%", "roi": "3.44", "cpm": "0.35", "ctr": "0.17%", "gmv": "67,303.89", "impressions": "56,521,647", "delta": "+3.0%" },
+          { "name": "大KOL系统", "spend": "9,435.03", "spendShare": "31.68%", "roi": "2.70", "cpm": "0.22", "ctr": "0.28%", "gmv": "25,427.84", "impressions": "42,343,156", "delta": "-19.3%" }
+        ],
+        "platform": [
+          { "name": "instagram", "spend": "21,426.49", "spendShare": "71.94%", "roi": "3.64", "cpm": "0.39", "ctr": "0.32%", "gmv": "78,049.31", "impressions": "55,547,735", "delta": "+7.3%" },
+          { "name": "facebook", "spend": "7,609.49", "spendShare": "25.55%", "roi": "1.93", "cpm": "0.18", "ctr": "0.09%", "gmv": "14,702.60", "impressions": "43,416,118", "delta": "-32.4%" }
+        ],
+        "product": [
+          { "name": "PDRN精华", "spend": "1,912.74", "spendShare": "6.42%", "roi": "2.60", "cpm": "0.21", "ctr": "0.12%", "gmv": "4,973.73", "impressions": "9,020,551", "delta": "+4.6%" },
+          { "name": "377面霜", "spend": "2,760.82", "spendShare": "9.27%", "roi": "3.18", "cpm": "0.26", "ctr": "0.18%", "gmv": "8,781.41", "impressions": "10,811,205", "delta": "-2.1%" },
+          { "name": "蓝色气垫", "spend": "3,956.12", "spendShare": "13.28%", "roi": "4.01", "cpm": "0.31", "ctr": "0.26%", "gmv": "15,870.00", "impressions": "12,634,778", "delta": "+9.8%" }
+        ]
+      },
+      "products": [
+        {
+          "name": "PDRN精华",
+          "summary": [
+            { "label": "花费", "value": "1,912.74" },
+            { "label": "GMV", "value": "4,973.73" },
+            { "label": "ROI", "value": "2.60" },
+            { "label": "订单", "value": "484" }
+          ],
+          "materials": [
+            { "material": "TH-Demo-001", "creator": "creator_alpha", "publishDate": "2026-07-03", "spend": "210.55", "gmv": "651.20", "roi": "3.09", "orders": "64", "isNew": true },
+            { "material": "TH-Demo-002", "creator": "creator_beta", "publishDate": "2026-07-07", "spend": "190.30", "gmv": "492.30", "roi": "2.59", "orders": "51", "isNew": false }
+          ]
+        },
+        {
+          "name": "377面霜",
+          "summary": [
+            { "label": "花费", "value": "2,760.82" },
+            { "label": "GMV", "value": "8,781.41" },
+            { "label": "ROI", "value": "3.18" },
+            { "label": "订单", "value": "902" }
+          ],
+          "materials": [
+            { "material": "TH-Demo-101", "creator": "creator_gamma", "publishDate": "2026-07-02", "spend": "260.40", "gmv": "890.80", "roi": "3.42", "orders": "88", "isNew": true },
+            { "material": "TH-Demo-102", "creator": "creator_delta", "publishDate": "2026-07-11", "spend": "175.00", "gmv": "490.20", "roi": "2.80", "orders": "47", "isNew": false }
+          ]
+        }
+      ],
+      "audit": {
+        "source": "查询数据源：ALL_data；环比数据源：ALL_data, DMS",
+        "stats": "有效日报行：5,015；聚合素材：501；新素材：148；低样本素材：173。",
+        "meta": {
+          "query_files": ["ALL_data"],
+          "compare_files": ["ALL_data", "DMS"],
+          "template_ready": true
+        }
+      }
+    }
+  </script>
+  <script>
+    const data = JSON.parse(document.getElementById("embeddedData").textContent);
+
+    function deltaClass(direction) {
+      if (direction === "up") return "delta-up";
+      if (direction === "down") return "delta-down";
+      return "delta-flat";
+    }
+
+    function makeCell(value, subtext) {
+      if (!subtext) return `<td class="num">${value}</td>`;
+      return `<td class="num"><div class="cell-main">${value}</div><div class="cell-sub ${subtext.startsWith("-") ? "delta-down" : "delta-up"}">${subtext}</div></td>`;
+    }
+
+    function renderMeta() {
+      document.getElementById("pageTitle").textContent = data.meta.title;
+      document.getElementById("pageSubtitle").textContent = data.meta.subtitle;
+      document.getElementById("updateTime").textContent = `最近更新：${data.meta.updatedAt}`;
+      document.getElementById("overviewTitle").textContent = data.meta.overviewTitle;
+      document.getElementById("overviewDescription").textContent = data.meta.overviewDescription;
+    }
+
+    function renderFilters() {
+      const el = document.getElementById("activeFilterSummary");
+      el.innerHTML = data.activeFilters.map((item) => `<span class="active-filter-chip">${item}</span>`).join("");
+    }
+
+    function renderOverview() {
+      const headers = ["维度", "花费", "GMV", "ROI", "订单", "曝光"];
+      const rows = data.overviewRows.map((row) => `
+        <tr>
+          <td>${row.name}</td>
+          <td class="num">${row.spend}</td>
+          <td class="num">${row.gmv}</td>
+          <td class="num">${row.roi}</td>
+          <td class="num">${row.orders}</td>
+          <td class="num">${row.impressions}</td>
+        </tr>
+      `).join("");
+
+      document.getElementById("overviewTable").innerHTML = `
+        <table>
+          <thead><tr>${headers.map((item) => `<th>${item}</th>`).join("")}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    function renderCards() {
+      document.getElementById("compareCards").innerHTML = data.compareCards.map((card) => `
+        <div class="cmp-card ${card.active ? "active" : ""}">
+          <span>${card.label}</span>
+          <b>${card.value}</b>
+          <small class="${deltaClass(card.direction)}">${card.delta}</small>
+        </div>
+      `).join("");
+    }
+
+    function renderTrend() {
+      const peak = Math.max(...data.trend.flatMap((item) => [item.current, item.compare]), 1);
+      document.getElementById("trendChart").innerHTML = data.trend.map((item) => `
+        <div class="trend-col">
+          <div class="trend-bars">
+            <div class="trend-bar compare" style="height:${(item.compare / peak) * 180}px" title="环比 ${item.compare}"></div>
+            <div class="trend-bar current" style="height:${(item.current / peak) * 180}px" title="本期 ${item.current}"></div>
+          </div>
+          <div class="trend-label">${item.label}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderCompareTable(targetId, rows) {
+      const target = document.getElementById(targetId);
+      if (!rows.length) {
+        target.innerHTML = '<div class="empty">暂无数据</div>';
+        return;
+      }
+
+      target.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>维度</th>
+              <th>花费</th>
+              <th>花费占比</th>
+              <th>ROI</th>
+              <th>CPM</th>
+              <th>CTR</th>
+              <th>GMV</th>
+              <th>曝光</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td>${row.name}</td>
+                ${makeCell(row.spend, row.delta)}
+                <td class="num">${row.spendShare}</td>
+                <td class="num">${row.roi}</td>
+                <td class="num">${row.cpm}</td>
+                <td class="num">${row.ctr}</td>
+                <td class="num">${row.gmv}</td>
+                <td class="num">${row.impressions}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderProducts() {
+      const picker = document.getElementById("productPicker");
+      picker.innerHTML = data.products.map((product, index) => `<option value="${index}">${product.name}</option>`).join("");
+
+      function updateProduct(index) {
+        const product = data.products[index] || data.products[0];
+        document.getElementById("productSummary").innerHTML = product.summary.map((item) => `
+          <div class="stat-card">
+            <span>${item.label}</span>
+            <b>${item.value}</b>
+          </div>
+        `).join("");
+
+        document.getElementById("materialTable").innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>素材</th>
+                <th>达人</th>
+                <th>发布时间</th>
+                <th>花费</th>
+                <th>GMV</th>
+                <th>ROI</th>
+                <th>订单</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${product.materials.map((row) => `
+                <tr class="${row.isNew ? "new-material" : ""}">
+                  <td>${row.material}</td>
+                  <td>${row.creator}</td>
+                  <td>${row.publishDate}</td>
+                  <td class="num">${row.spend}</td>
+                  <td class="num">${row.gmv}</td>
+                  <td class="num">${row.roi}</td>
+                  <td class="num">${row.orders}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        `;
+      }
+
+      picker.addEventListener("change", (event) => updateProduct(Number(event.target.value)));
+      updateProduct(0);
+    }
+
+    function renderAudit() {
+      document.getElementById("auditSource").textContent = data.audit.source;
+      document.getElementById("auditStats").textContent = data.audit.stats;
+      document.getElementById("auditMeta").textContent = JSON.stringify(data.audit.meta);
+    }
+
+    renderMeta();
+    renderFilters();
+    renderOverview();
+    renderCards();
+    renderTrend();
+    renderCompareTable("systemCompare", data.tables.system);
+    renderCompareTable("platformCompare", data.tables.platform);
+    renderCompareTable("productCompare", data.tables.product);
+    renderProducts();
+    renderAudit();
+  </script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+metrics:
+  spend:
+    label: 花费
+    formula: raw spend
+  impressions:
+    label: 曝光量
+    formula: raw impressions
+  clicks:
+    label: 点击量
+    formula: raw clicks
+  ctr:
+    label: CTR
+    formula: clicks / impressions
+  cpc:
+    label: CPC
+    formula: spend / clicks
+  cpm:
+    label: CPM
+    formula: spend / impressions * 1000
+  visitors:
+    label: 访客
+    formula: raw visitors
+  orders:
+    label: 订单数
+    formula: raw orders
+  gmv:
+    label: GMV
+    formula: raw gmv
+  roi:
+    label: ROI
+    formula: gmv / spend
+  aov:
+    label: AOV
+    formula: gmv / orders
+  cvr:
+    label: CVR
+    formula: orders / visitors

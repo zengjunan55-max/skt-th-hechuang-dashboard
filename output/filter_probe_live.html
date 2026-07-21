@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Filter Probe Live</title>
+  <style>
+    body { font-family: "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; }
+    pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.6; }
+    iframe { width: 1600px; height: 2600px; border: 1px solid #ccd6e0; }
+  </style>
+</head>
+<body>
+  <pre id="log">loading...</pre>
+  <iframe id="report" src="./april_review_interactive.html"></iframe>
+  <script>
+    (function () {
+      function shortArray(arr, n) {
+        return Array.isArray(arr) ? arr.slice(0, n) : [];
+      }
+
+      function textOf(doc, id) {
+        return (doc.getElementById(id)?.textContent || "").trim();
+      }
+
+      function plotSummary(doc, id) {
+        const el = doc.getElementById(id);
+        if (!el) return { exists: false };
+        const traces = Array.isArray(el.data) ? el.data.map((t) => ({
+          name: t.name || "",
+          x: shortArray(t.x, 4),
+          y: shortArray(t.y, 4)
+        })) : [];
+        return { exists: true, traces };
+      }
+
+      function tableSummary(doc, id) {
+        const holder = doc.getElementById(id);
+        if (!holder) return { exists: false };
+        const rows = Array.from(holder.querySelectorAll("tbody tr")).slice(0, 3).map((tr) =>
+          Array.from(tr.querySelectorAll("td")).slice(0, 5).map((td) => td.textContent.trim())
+        );
+        return { exists: true, rows };
+      }
+
+      function findOption(win, key, matcher) {
+        const list = (((win || {}).DATA || {}).filters || {})[key] || [];
+        return list.find((v) => matcher(String(v))) || list[0] || null;
+      }
+
+      function optionByIndex(win, key, preferredIndex) {
+        const list = (((win || {}).DATA || {}).filters || {})[key] || [];
+        if (!list.length) return null;
+        const index = Math.max(0, Math.min(preferredIndex, list.length - 1));
+        return list[index];
+      }
+
+      function snapshot(win, label) {
+        const doc = win.document;
+        return {
+          label,
+          filters: JSON.parse(JSON.stringify(win.state.filters)),
+          topN: win.state.topN,
+          summary: textOf(doc, "filter-summary"),
+          shopShare: plotSummary(doc, "shop-share-chart"),
+          shopCvr: plotSummary(doc, "shop-cvr-chart"),
+          shopSpendVisitor: plotSummary(doc, "shop-spend-visitor-chart"),
+          module: plotSummary(doc, "module-gmv-cvr-chart"),
+          category: plotSummary(doc, "category-gmv-cvr-chart"),
+          product: plotSummary(doc, "product-gmv-cvr-chart"),
+          categoryTable: tableSummary(doc, "category-table"),
+          productTable: tableSummary(doc, "product-table"),
+          categoryRoiTable: tableSummary(doc, "category_roi-table"),
+          productRoiTable: tableSummary(doc, "product_roi-table")
+        };
+      }
+
+      function applyFilters(win, next) {
+        const keys = ["shop", "group", "category", "product"];
+        keys.forEach((key) => {
+          win.state.filters[key] = next[key] || [];
+        });
+        if (typeof next.topN === "number") win.state.topN = next.topN;
+        win.renderAll(false);
+      }
+
+      function waitForReady(win, tries) {
+        if (tries > 300) {
+          document.getElementById("log").textContent = "timeout";
+          return;
+        }
+        try {
+          if (
+            win &&
+            win.state &&
+            typeof win.renderAll === "function" &&
+            win.document.getElementById("module-gmv-cvr-chart") &&
+            win.document.getElementById("category-table") &&
+            win.document.getElementById("shop-share-chart")
+          ) {
+            run(win);
+            return;
+          }
+        } catch (err) {}
+        setTimeout(() => waitForReady(win, tries + 1), 200);
+      }
+
+      function run(win) {
+        const product = optionByIndex(win, "product", 3);
+        const category = optionByIndex(win, "category", 1);
+        const shop = optionByIndex(win, "shop", 1);
+        const group = optionByIndex(win, "group", 1);
+
+        const results = [];
+        results.push(snapshot(win, "base"));
+        applyFilters(win, { product: product ? [product] : [], category: [], shop: [], group: [], topN: 10 });
+        results.push(snapshot(win, "product"));
+        applyFilters(win, { product: [], category: category ? [category] : [], shop: [], group: [], topN: 10 });
+        results.push(snapshot(win, "category"));
+        applyFilters(win, { product: [], category: [], shop: shop ? [shop] : [], group: [], topN: 10 });
+        results.push(snapshot(win, "shop"));
+        applyFilters(win, { product: [], category: [], shop: [], group: group ? [group] : [], topN: 10 });
+        results.push(snapshot(win, "group"));
+        applyFilters(win, { product: [], category: [], shop: [], group: [], topN: 3 });
+        results.push(snapshot(win, "topN"));
+        document.getElementById("log").textContent = JSON.stringify({
+          picked: { product, category, shop, group },
+          results
+        }, null, 2);
+      }
+
+      const iframe = document.getElementById("report");
+      iframe.addEventListener("load", function () {
+        waitForReady(iframe.contentWindow, 0);
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+default_spreadsheet_url: "https://docs.google.com/spreadsheets/d/1mafy2hinc9LztCkWkxo8aboCqlmyTy7-BWIdeuNPZf4/edit?gid=11664698#gid=11664698"
+default_spreadsheet_key: "1mafy2hinc9LztCkWkxo8aboCqlmyTy7-BWIdeuNPZf4"
+local_cache_workbook: "output/thailand_sheet.xlsx"
+
+worksheets:
+  outer_ads: "站外广告"
+  shop_gmv: "全站产品数据"
+  inner_ads: "站内广告"
+  tt_sales: "TT出货"
+
+period_override:
+  current_start: "2026-04-01"
+  current_end: "2026-04-26"
+  prior_start: "2026-03-01"
+  prior_end: "2026-03-26"
+
+report_title: "Skintific Thailand Meta x Shopee 4月复盘"
+report_subtitle: "Meta站外投放 x 全站产品GMV x 站内广告联动复盘"
+data_rule_note: "本次报告使用泰国市场在线表；分析周期固定为2026-04-01至2026-04-26，对比周期为2026-03-01至2026-03-26。"
+disable_group_analysis: true
+focus_new_products:
+  - name: "PDRN面霜"
+    launch_date: "2026-02-24"
+    launch_text: "2月24日上线"
+  - name: "玫瑰洁面"
+    source_name: "玫瑰奶油洁面膏"
+    launch_date: "2026-03-12"
+    launch_text: "3月12日上线"
+  - name: "素颜霜"
+    launch_date: "2026-02-14"
+    launch_text: "2月14日上线"
+  - name: "B5面霜"
+    launch_date: "2026-04-22"
+    launch_text: "4月22日上线"
+    note: "本期统计截止到4月26日，如当前仍暂无数据，先保留在重点新品池中供后续补数追踪。"
+
+competitor_sources:
+  enabled: false
+  expected_region: "TH"
+  search_dirs:
+    - "output"
+    - "."
+  ignore_dirs:
+    - "archive_indonesia"
+  filename_keywords:
+    - "TH_competitor"
+    - "competitor"
+    - "竞品"
+    - "rank"
+    - "ranking"
+  preferred_sheet_names:
+    sales:
+      - "By Sales"
+      - "Sales"
+    units:
+      - "By Units Sold"
+      - "Units"
+    views:
+      - "By Product View"
+      - "Views"
+    definitions:
+      - "Definitions"

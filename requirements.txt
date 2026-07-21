@@ -1,0 +1,9 @@
+pandas
+numpy
+matplotlib
+pyyaml
+jinja2
+pytest
+gspread
+google-auth
+google-cloud-bigquery

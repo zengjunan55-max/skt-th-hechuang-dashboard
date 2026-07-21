@@ -1,0 +1,35 @@
+dimensions:
+  module:
+    source_field: 模块
+
+  category_rollup:
+    source_field: 品类
+    mapping:
+      面霜: 护肤
+      精华: 护肤
+      面膜: 护肤
+      磨皮棉片: 护肤
+      洁面: 护肤
+      2件套: 护肤
+      3件套: 护肤
+      4件套以上: 护肤
+      气垫: 底妆
+      水油唇雾: 底妆
+      粉底液: 底妆
+      防晒: 底妆
+      唇部精华: 底妆
+      卸妆: 底妆
+      彩妆套组: 底妆
+      粉饼: 底妆
+
+  category:
+    source_field: 品类
+
+  product:
+    source_field: 产品
+
+  bundle:
+    source_field: 套组
+
+  shop:
+    source_field: 店铺

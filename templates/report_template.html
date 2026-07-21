@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>{{ title }}</title>
+  <style>
+    :root {
+      --bg-top: #f3eee1;
+      --bg-bottom: #f8f7f4;
+      --card: #fffdfa;
+      --line: #ddd4c6;
+      --text: #182026;
+      --muted: #52606d;
+      --accent: #0f766e;
+      --accent-soft: #dff3f1;
+      --warn-soft: #fff3d6;
+      --warn: #8a5a00;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+    }
+    .page {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 28px 18px 40px;
+    }
+    .hero, .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 14px 32px rgba(24, 32, 38, 0.06);
+    }
+    .hero {
+      padding: 28px;
+      margin-bottom: 20px;
+      background:
+        radial-gradient(circle at top right, rgba(15, 118, 110, 0.12), transparent 28%),
+        var(--card);
+    }
+    .card {
+      padding: 22px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+    }
+    h1, h2 {
+      margin: 0 0 12px;
+    }
+    p, li {
+      line-height: 1.7;
+      color: var(--muted);
+    }
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .section-tag {
+      display: inline-block;
+      margin-bottom: 12px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 13px;
+    }
+    .section-tag.warn {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+    table {
+      width: 100%;
+      min-width: 840px;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 10px 8px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      background: #f1f5f4;
+      color: var(--text);
+    }
+    img {
+      max-width: 100%;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+    }
+    .chart-caption {
+      margin-top: 10px;
+    }
+    .empty-note {
+      color: var(--warn);
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="section-tag">Executive Summary</div>
+      <h1>{{ title }}</h1>
+      <p>{{ subtitle }}</p>
+      <ul>
+        {% for item in executive_summary %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <div class="section-tag">KPI Summary</div>
+        <h2>{{ kpi_summary.title }}</h2>
+        {% if kpi_summary.columns and kpi_summary.rows %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {% for column in kpi_summary.columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in kpi_summary.rows %}
+              <tr>
+                {% for column in kpi_summary.columns %}
+                <td>{{ row[column] }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="empty-note">当前没有可展示的 KPI 汇总数据。</p>
+        {% endif %}
+      </section>
+
+      {% for chart in charts %}
+      <section class="card">
+        <div class="section-tag">趋势图</div>
+        <h2>{{ chart.title }}</h2>
+        <img src="{{ chart.path }}" alt="{{ chart.title }}">
+        {% if chart.caption %}
+        <p class="chart-caption">{{ chart.caption }}</p>
+        {% endif %}
+      </section>
+      {% endfor %}
+
+      {% for section in diagnosis_sections %}
+      <section class="card">
+        <div class="section-tag">诊断表</div>
+        <h2>{{ section.title }}</h2>
+        {% if section.note %}
+        <p>{{ section.note }}</p>
+        {% endif %}
+        {% if section.summary %}
+        <p>{{ section.summary }}</p>
+        {% endif %}
+        {% if section.columns and section.rows %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {% for column in section.columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in section.rows %}
+              <tr>
+                {% for column in section.columns %}
+                <td>{{ row[column] }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="empty-note">当前没有可展示的诊断表数据。</p>
+        {% endif %}
+        {% if section.next_step %}
+        <p><strong>下一步：</strong>{{ section.next_step }}</p>
+        {% endif %}
+      </section>
+      {% endfor %}
+
+      <section class="two-col">
+        <div class="card">
+          <div class="section-tag">Highlights</div>
+          <h2>亮点</h2>
+          <ul>
+            {% for item in highlights %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div class="card">
+          <div class="section-tag warn">Weaknesses</div>
+          <h2>弱点</h2>
+          <ul>
+            {% for item in weaknesses %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-tag">Next Steps</div>
+        <h2>下一步动作</h2>
+        <ul>
+          {% for item in actions %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="card">
+        <div class="section-tag">Data Notes</div>
+        <h2>数据说明</h2>
+        <ul>
+          {% for item in data_notes %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,47 @@
+default_spreadsheet_url: "https://docs.google.com/spreadsheets/d/1mafy2hinc9LztCkWkxo8aboCqlmyTy7-BWIdeuNPZf4/edit?gid=11664698#gid=11664698"
+default_spreadsheet_key: "1mafy2hinc9LztCkWkxo8aboCqlmyTy7-BWIdeuNPZf4"
+local_cache_workbook: "output/thailand_sheet.xlsx"
+
+worksheets:
+  outer_ads: "站外广告"
+  shop_gmv: "全站产品数据"
+  inner_ads: "站内广告"
+  tt_sales: "TT出货"
+
+period_override:
+  current_start: "2026-04-01"
+  current_end: "2026-04-20"
+  prior_start: "2026-03-01"
+  prior_end: "2026-03-20"
+
+report_title: "Skintific Thailand Meta x Shopee 4月复盘"
+report_subtitle: "Meta站外投放 x 全站产品GMV x 站内广告联动复盘"
+data_rule_note: "本次报告使用泰国市场在线表；分析周期固定为2026-04-01至2026-04-20，对比周期为2026-03-01至2026-03-20。"
+disable_group_analysis: true
+
+competitor_sources:
+  enabled: true
+  expected_region: "TH"
+  search_dirs:
+    - "output"
+    - "."
+  ignore_dirs:
+    - "archive_indonesia"
+  filename_keywords:
+    - "TH_competitor"
+    - "competitor"
+    - "竞品"
+    - "rank"
+    - "ranking"
+  preferred_sheet_names:
+    sales:
+      - "By Sales"
+      - "Sales"
+    units:
+      - "By Units Sold"
+      - "Units"
+    views:
+      - "By Product View"
+      - "Views"
+    definitions:
+      - "Definitions"

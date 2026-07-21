@@ -1,0 +1,11 @@
+﻿default_spreadsheet_url: "https://docs.google.com/spreadsheets/d/1mafy2hinc9LztCkWkxo8aboCqlmyTy7-BWIdeuNPZf4/edit?gid=11664698#gid=11664698"
+default_spreadsheet_key: "1mafy2hinc9LztCkWkxo8aboCqlmyTy7-BWIdeuNPZf4"
+local_cache_workbook: "output/thailand_sheet.xlsx"
+worksheets:
+  outer_ads: "站外广告"
+  shop_gmv: "全站产品数据"
+  inner_ads: "站内广告"
+  tt_sales: "TT出货"
+  april_temp: "GPT_4月分析临时"
+competitor_sources:
+  enabled: false
