@@ -1390,8 +1390,12 @@
       const materialIds = new Set(rows.map(r => r.material_id));
       const paidMaterialIds = new Set(
         rows
-          .filter(r => Number(r.spend || 0) !== 0)
-          .map(r => r.material_id)
+          .filter(r => {
+            const adType = String(r['广告类型'] || '').trim();
+            return adType === '合创广告' && Number(r.impressions || 0) > 0;
+          })
+          .map(r => String(r.post_id || r.material_id || '').trim())
+          .filter(Boolean)
       );
       const visibleNewIds = new Set(rows.map(r => String(r.material_id)).filter(id => fixedNewMaterialIds.has(id)));
       const spend = sum(rows, 'spend');
