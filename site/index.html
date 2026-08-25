@@ -2792,6 +2792,7 @@
         date: formatDateOnly(row['日期']),
         post_id: postId,
         ad_type: normalizeText(row['广告类型']),
+        '广告类型': normalizeText(row['广告类型']),
         material_id: materialId,
         material_code: normalizeText(dms['素材编号']) || materialNo || materialId,
         material_name: normalizeText(row['剧本名称']) || normalizeText(row['广告名称']) || materialId,

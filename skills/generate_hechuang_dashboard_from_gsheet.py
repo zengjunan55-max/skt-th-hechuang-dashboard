@@ -1,0 +1,1372 @@
+﻿from __future__ import annotations
+
+import json
+import re
+import time
+from datetime import datetime
+from io import StringIO
+from pathlib import Path
+
+import pandas as pd
+import requests
+
+import generate_kol_dashboard as base
+
+
+SHEET_ID = "142eo8ASRHj0utna0cHxiWRnMY8s7r0ZFKAc-7s_jdgs"
+BASE_DIR = Path(__file__).resolve().parent
+OUTPUT_PATH = BASE_DIR / "SKT-鍚堝垱鍐呭鏁版嵁鐪嬫澘_鑷姩鐗?html"
+ALL_DATA_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&sheet=ALL_data"
+WORKBOOK_XLSX_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=xlsx"
+DMS_GVIZ_URL = (
+    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
+    "?tqx=out:json&sheet=DMS&range=A1:CV10000"
+)
+
+
+def enhance_html_for_live_refresh(html_text: str) -> str:
+    button_html = (
+        '<button id="refreshNow" type="button">绔嬪嵆鍒锋柊</button>'
+    )
+    status_html = (
+        '<span id="refreshStatus" class="refresh-status refresh-status-idle">'
+        '<span class="refresh-status-dot"></span>'
+        '<span class="refresh-status-text">鏁版嵁姝ｅ父</span>'
+        '</span>'
+    )
+    html_text = html_text.replace(
+        '<button id="applyDates" type="button">搴旂敤鏃堕棿娈?/button>',
+        f'<button id="applyDates" type="button">搴旂敤鏃堕棿娈?/button>{button_html}',
+        1,
+    )
+    html_text = html_text.replace(
+        '<div class="controls-meta">\n        <span class="update-time">',
+        f'<div class="controls-meta">\n        {status_html}\n        <span class="update-time">',
+        1,
+    )
+    html_text = html_text.replace(
+        "</style>",
+        """
+    .refresh-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .refresh-status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #30a46c;
+      box-shadow: 0 0 0 2px rgba(48, 164, 108, 0.12);
+      flex: 0 0 10px;
+    }
+    .refresh-status-refreshing {
+      color: #b26a00;
+    }
+    .refresh-status-refreshing .refresh-status-dot {
+      background: #f59e0b;
+      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.18);
+    }
+    .refresh-status-success,
+    .refresh-status-idle {
+      color: #1f7a4d;
+    }
+    .refresh-status-success .refresh-status-dot,
+    .refresh-status-idle .refresh-status-dot {
+      background: #22c55e;
+      box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.16);
+    }
+    .refresh-status-error {
+      color: #c0362c;
+    }
+    .refresh-status-error .refresh-status-dot {
+      background: #ef4444;
+      box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.16);
+    }
+    .controls-filter-panel {
+      justify-content: flex-start;
+    }
+"""
+        + "</style>",
+        1,
+    )
+    inject_script = f"""
+<script>
+(function() {{
+  const SHEET_ID = "{SHEET_ID}";
+  const ALL_DATA_GVIZ_URL = "https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:__allDataRefreshHandler&sheet=ALL_data&range=A1:AL300000";
+  const DMS_GVIZ_URL = "https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:__dmsRefreshHandler&sheet=DMS&range=A1:CV10000";
+  const refreshBtn = document.getElementById('refreshNow');
+  const refreshStatus = document.getElementById('refreshStatus');
+  const updateTimeNode = document.querySelector('.update-time');
+  const periodSummaryNode = document.querySelector('header > p');
+
+  function setRefreshStatus(state) {{
+    if (!refreshStatus) return;
+    const config = {{
+      idle: {{ text: '鏁版嵁姝ｅ父', cls: 'refresh-status-idle' }},
+      refreshing: {{ text: '鍒锋柊涓?, cls: 'refresh-status-refreshing' }},
+      success: {{ text: '鏁版嵁姝ｅ父', cls: 'refresh-status-success' }},
+      error: {{ text: '鏁版嵁寮傚父', cls: 'refresh-status-error' }},
+    }}[state] || {{ text: state || '', cls: 'refresh-status-idle' }};
+    refreshStatus.className = 'refresh-status ' + config.cls;
+    const textNode = refreshStatus.querySelector('.refresh-status-text');
+    if (textNode) textNode.textContent = config.text;
+  }}
+
+  function normalizeText(value) {{
+    return value === undefined || value === null ? '' : String(value).trim();
+  }}
+
+  function gvizRowsToObjects(payload) {{
+    const cols = payload.table.cols.map(col => normalizeText(col.label));
+    return (payload.table.rows || []).map(item => {{
+      const cells = item.c || [];
+      const row = {{}};
+      cols.forEach((col, idx) => {{
+        const cell = idx < cells.length ? cells[idx] : null;
+        row[col] = cell ? cell.v : null;
+      }});
+      return row;
+    }});
+  }}
+
+  function fetchAllDataRows() {{
+    return new Promise((resolve, reject) => {{
+      const old = document.getElementById('all-data-refresh-script');
+      if (old) old.remove();
+      const timer = setTimeout(() => reject(new Error('璇诲彇 ALL_data 瓒呮椂')), 120000);
+      window.__allDataRefreshHandler = payload => {{
+        clearTimeout(timer);
+        try {{
+          resolve(gvizRowsToObjects(payload));
+        }} catch (err) {{
+          reject(err);
+        }}
+      }};
+      const script = document.createElement('script');
+      script.id = 'all-data-refresh-script';
+      script.src = ALL_DATA_GVIZ_URL + '&_=' + Date.now();
+      script.onerror = () => {{
+        clearTimeout(timer);
+        reject(new Error('鍔犺浇 ALL_data 鑴氭湰澶辫触'));
+      }};
+      document.head.appendChild(script);
+    }});
+  }}
+
+  function fetchDmsRows() {{
+    return new Promise((resolve, reject) => {{
+      const old = document.getElementById('dms-refresh-script');
+      if (old) old.remove();
+      const timer = setTimeout(() => reject(new Error('璇诲彇 DMS 瓒呮椂')), 120000);
+      window.__dmsRefreshHandler = payload => {{
+        clearTimeout(timer);
+        try {{
+          resolve(gvizRowsToObjects(payload));
+        }} catch (err) {{
+          reject(err);
+        }}
+      }};
+      const script = document.createElement('script');
+      script.id = 'dms-refresh-script';
+      script.src = DMS_GVIZ_URL + '&_=' + Date.now();
+      script.onerror = () => {{
+        clearTimeout(timer);
+        reject(new Error('鍔犺浇 DMS 鑴氭湰澶辫触'));
+      }};
+      document.head.appendChild(script);
+    }});
+  }}
+
+  function toNumber(value) {{
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }}
+
+  function formatDateOnly(value) {{
+    const text = normalizeText(value);
+    if (!text) return '';
+    const match = text.match(/^(\\d{{4}})-(\\d{{2}})-(\\d{{2}})/);
+    if (match) return `${{match[1]}}-${{match[2]}}-${{match[3]}}`;
+    const gvizMatch = text.match(/^Date\\((\\d{{4}}),(\\d{{1,2}}),(\\d{{1,2}})(?:,\\d{{1,2}},\\d{{1,2}},\\d{{1,2}})?\\)$/);
+    if (gvizMatch) {{
+      const year = Number(gvizMatch[1]);
+      const month = Number(gvizMatch[2]) + 1;
+      const day = Number(gvizMatch[3]);
+      return `${{year}}-${{String(month).padStart(2, '0')}}-${{String(day).padStart(2, '0')}}`;
+    }}
+    if (Object.prototype.toString.call(value) === '[object Date]' && !Number.isNaN(value.getTime())) {{
+      return `${{value.getFullYear()}}-${{String(value.getMonth() + 1).padStart(2, '0')}}-${{String(value.getDate()).padStart(2, '0')}}`;
+    }}
+    const d = new Date(text);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${{d.getFullYear()}}-${{String(d.getMonth() + 1).padStart(2, '0')}}-${{String(d.getDate()).padStart(2, '0')}}`;
+  }}
+
+  function normalizeScaleBySystem(systemType) {{
+    const text = normalizeText(systemType).toLowerCase().replace(/\\s+/g, '');
+    if (text === 'bigkol绯荤粺' || text === '澶ol绯荤粺' || text === '澶ol绯荤当') return 'Big KOL绯荤粺';
+    if (text === 'regularkol绯荤粺') return 'Regular KOL绯荤粺';
+    return '鍏朵粬';
+  }}
+
+  function buildDmsLookup(rows) {{
+    const map = new Map();
+    rows.forEach(row => {{
+      const id = normalizeText(row['绱犳潗缂栧彿']);
+      if (!id) return;
+      const current = map.get(id) || {{
+        绱犳潗缂栧彿: id,
+        绮変笣鏁? 0,
+        杈句汉閲忕骇: '',
+        username: '',
+        url: '',
+        绯荤粺绫诲瀷: '',
+        鍐呭骞冲彴: '',
+        鍙戝竷鏃堕棿: ''
+      }};
+      current.绮変笣鏁?= Math.max(current.绮変笣鏁?|| 0, toNumber(row['绮変笣鏁?]));
+      current.杈句汉閲忕骇 = current.杈句汉閲忕骇 || normalizeText(row['杈句汉閲忕骇']);
+      current.username = current.username || normalizeText(row['username']);
+      current.url = current.url || normalizeText(row['url']);
+      current.绯荤粺绫诲瀷 = current.绯荤粺绫诲瀷 || normalizeText(row['绯荤粺绫诲瀷']);
+      current.鍐呭骞冲彴 = current.鍐呭骞冲彴 || normalizeText(row['鍐呭骞冲彴']);
+      current.鍙戝竷鏃堕棿 = current.鍙戝竷鏃堕棿 || normalizeText(row['鍙戝竷鏃堕棿']);
+      map.set(id, current);
+    }});
+    return map;
+  }}
+
+  function defaultPeriods(filteredRows) {{
+    const now = new Date();
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const queryStart = `${{yesterday.getFullYear()}}-${{String(yesterday.getMonth() + 1).padStart(2, '0')}}-01`;
+    const queryEnd = `${{yesterday.getFullYear()}}-${{String(yesterday.getMonth() + 1).padStart(2, '0')}}-${{String(yesterday.getDate()).padStart(2, '0')}}`;
+    const prevMonthEnd = new Date(yesterday.getFullYear(), yesterday.getMonth(), 0);
+    const compareStart = `${{prevMonthEnd.getFullYear()}}-${{String(prevMonthEnd.getMonth() + 1).padStart(2, '0')}}-01`;
+    const compareEndDay = Math.min(yesterday.getDate(), prevMonthEnd.getDate());
+    const compareEnd = `${{prevMonthEnd.getFullYear()}}-${{String(prevMonthEnd.getMonth() + 1).padStart(2, '0')}}-${{String(compareEndDay).padStart(2, '0')}}`;
+    return {{
+      query: {{ start: queryStart, end: queryEnd }},
+      compare: {{ start: compareStart, end: compareEnd }},
+    }};
+  }}
+
+  function applyDefaultPeriodsToInputs() {{
+    const periods = defaultPeriods([]);
+    const qStartInput = document.getElementById('qStart');
+    const qEndInput = document.getElementById('qEnd');
+    const cStartInput = document.getElementById('cStart');
+    const cEndInput = document.getElementById('cEnd');
+    if (qStartInput) qStartInput.value = periods.query.start;
+    if (qEndInput) qEndInput.value = periods.query.end;
+    if (cStartInput) cStartInput.value = periods.compare.start;
+    if (cEndInput) cEndInput.value = periods.compare.end;
+    updatePeriodSummary(periods);
+    return periods;
+  }}
+
+  function selectedPeriodsFromInputs() {{
+    const qStart = document.getElementById('qStart')?.value || '';
+    const qEnd = document.getElementById('qEnd')?.value || qStart;
+    const cStart = document.getElementById('cStart')?.value || '';
+    const cEnd = document.getElementById('cEnd')?.value || cStart;
+    return {{
+      query: {{ start: qStart, end: qEnd }},
+      compare: {{ start: cStart, end: cEnd }},
+    }};
+  }}
+
+  function validPeriod(period) {{
+    return normalizeText(period?.start) && normalizeText(period?.end) && period.start <= period.end;
+  }}
+
+  function updatePeriodSummary(periods) {{
+    if (!periodSummaryNode || !periods) return;
+    periodSummaryNode.textContent = `鏌ヨ鍛ㄦ湡锛?{{periods.query.start}} 鑷?${{periods.query.end}}锛涚幆姣斿懆鏈燂細${{periods.compare.start}} 鑷?${{periods.compare.end}}銆俙;
+  }}
+
+  function buildSourceRows(allRows, dmsMap) {{
+    const filtered = allRows.filter(row => normalizeText(row['骞垮憡绫诲瀷']).includes('鍚堝垱骞垮憡'));
+    return filtered.map(row => {{
+      const postId = normalizeText(row['甯栧瓙ID']);
+      const materialNo = normalizeText(row['绱犳潗缂栧彿']);
+      const matchId = postId || materialNo;
+      const dms = dmsMap.get(matchId) || {{}};
+      const materialId = postId || materialNo || normalizeText(row['URL']) || normalizeText(row['骞垮憡鍚嶇О']);
+      const publishDate = formatDateOnly(dms['鍙戝竷鏃堕棿']) || formatDateOnly(row['绱犳潗鍒涘缓鏃堕棿']) || formatDateOnly(row['鍒涘缓鏃堕棿']);
+      const systemType = normalizeText(row['绯荤粺绫诲瀷']) || normalizeText(dms['绯荤粺绫诲瀷']) || '鍏朵粬';
+      return {{
+        date: formatDateOnly(row['鏃ユ湡']),
+        post_id: postId,
+        ad_type: normalizeText(row['骞垮憡绫诲瀷']),
+        '广告类型': normalizeText(row['骞垮憡绫诲瀷']),
+        material_id: materialId,
+        material_code: normalizeText(dms['绱犳潗缂栧彿']) || materialNo || materialId,
+        material_name: normalizeText(row['鍓ф湰鍚嶇О']) || normalizeText(row['骞垮憡鍚嶇О']) || materialId,
+        material_product: normalizeText(row['浜у搧']),
+        product: normalizeText(row['浜у搧']),
+        platform: normalizeText(row['骞冲彴']) || normalizeText(dms['鍐呭骞冲彴']) || '-',
+        username: normalizeText(dms['username']) || normalizeText(row['KOL']) || '-',
+        system_type: systemType,
+        scale_label: normalizeScaleBySystem(systemType),
+        scale_raw: normalizeText(dms['杈句汉閲忕骇']),
+        fans: toNumber(dms['绮変笣鏁?]),
+        url: normalizeText(row['URL']) || normalizeText(dms['url']) || '-',
+        source_url: normalizeText(row['URL']) || normalizeText(dms['url']) || '-',
+        publish_date: publishDate,
+        ad_form2: normalizeText(row['骞垮憡褰㈠紡2']),
+        spend: Math.max(0, toNumber(row['鑺辫垂閲戦锛圲SD锛?])),
+        gmv: Math.max(0, toNumber(row['璐墿杞寲浠峰€?])),
+        orders: Math.max(0, toNumber(row['璁㈠崟鏁?])),
+        impressions: Math.max(0, toNumber(row['灞曠ず娆℃暟'])),
+        clicks: Math.max(0, toNumber(row['鐐瑰嚮閲?])),
+        reach: Math.max(0, toNumber(row['灞曠ず娆℃暟'])),
+      }};
+    }}).filter(row => row.date && row.material_id);
+  }}
+
+  function updateNewMaterialIds(rows, queryPeriod) {{
+    fixedNewMaterialIds.clear();
+    rows.forEach(row => {{
+      if (row.publish_date && row.publish_date >= queryPeriod.start && row.publish_date <= queryPeriod.end) {{
+        fixedNewMaterialIds.add(String(row.material_id));
+      }}
+    }});
+  }}
+
+  async function refreshFromGoogleSheet(periodsOverride = null, options = {{}}) {{
+    if (!refreshBtn) return;
+    refreshBtn.disabled = true;
+    setRefreshStatus('refreshing');
+    try {{
+      const [allRows, dmsRows] = await Promise.all([fetchAllDataRows(), fetchDmsRows()]);
+      const sourceRows = buildSourceRows(allRows, buildDmsLookup(dmsRows));
+      const periods = periodsOverride || defaultPeriods(sourceRows.map(row => ({{ 鏃ユ湡: row.date }})));
+      const queryRows = sourceRows.filter(row => row.date >= periods.query.start && row.date <= periods.query.end);
+      const compareRows = sourceRows.filter(row => row.date >= periods.compare.start && row.date <= periods.compare.end);
+      if (!queryRows.length) throw new Error(`鏌ヨ鏃堕棿娈?${{periods.query.start}} 鑷?${{periods.query.end}} 鏃犳暟鎹甡);
+      if (!compareRows.length) throw new Error(`鐜瘮鏃堕棿娈?${{periods.compare.start}} 鑷?${{periods.compare.end}} 鏃犳暟鎹甡);
+      updateNewMaterialIds(sourceRows, periods.query);
+      embedded.queryRaw = queryRows;
+      embedded.compareRaw = compareRows;
+      embedded.queryPeriod = periods.query;
+      embedded.comparePeriod = periods.compare;
+      const mats = materialRows(queryRows);
+      embedded.cpmMedian = mats.length ? mats.map(item => Number(item.cpm || 0)).sort((a,b)=>a-b)[Math.floor(mats.length/2)] : 0;
+      document.getElementById('qStart').value = periods.query.start;
+      document.getElementById('qEnd').value = periods.query.end;
+      document.getElementById('cStart').value = periods.compare.start;
+      document.getElementById('cEnd').value = periods.compare.end;
+      updatePeriodSummary(periods);
+      refreshAllBoards(queryRows, compareRows);
+      const now = new Date();
+      const stamp = `${{now.getFullYear()}}/${{String(now.getMonth()+1).padStart(2,'0')}}/${{String(now.getDate()).padStart(2,'0')}} ${{String(now.getHours()).padStart(2,'0')}}:${{String(now.getMinutes()).padStart(2,'0')}}:${{String(now.getSeconds()).padStart(2,'0')}}`;
+      if (updateTimeNode) updateTimeNode.textContent = '鏈€杩戞洿鏂帮細' + stamp;
+      setRefreshStatus('success');
+    }} catch (err) {{
+      console.error(err);
+      setRefreshStatus('error');
+      alert('绔嬪嵆鍒锋柊澶辫触锛? + (err && err.message ? err.message : err));
+    }} finally {{
+      refreshBtn.disabled = false;
+    }}
+  }}
+
+  if (refreshBtn) {{
+    setRefreshStatus('idle');
+    refreshBtn.addEventListener('click', () => refreshFromGoogleSheet());
+  }}
+  applyDefaultPeriodsToInputs();
+  window.refreshFromGoogleSheet = refreshFromGoogleSheet;
+}})();
+</script>
+"""
+    return html_text.replace("</body>", inject_script + "\n</body>", 1)
+
+
+def enhance_html_with_overview_filter(html_text: str) -> str:
+    overview_html = """
+    <section id="hechuangOverviewSection">
+      <h2>鍚堝垱鍩虹鏁版嵁</h2>
+      <p class="small">浠呭睍绀哄悎鍒涜浆鍖栦笌鍚堝垱鏇濆厜涓よ锛岀偣鍑诲彲瑙﹀彂鍏ㄥ眬骞垮憡绫诲瀷鑱斿姩銆?/p>
+      <div class="table-wrap" id="hechuangOverviewTable"></div>
+    </section>
+    """
+    html_text = html_text.replace(
+        "</header>",
+        overview_html + "\n  </header>",
+        1,
+    )
+    html_text = html_text.replace(
+        "</style>",
+        """
+    .overview-chip {
+      border: 1px solid var(--line);
+      background: #f5fbfd;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 8px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .active-overview-row .overview-chip {
+      background: var(--brand);
+      color: #fff;
+      border-color: var(--brand);
+    }
+    .linked-filter-row {
+      cursor: default;
+    }
+    .compare-filter-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      background: #f5fbfd;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 8px 16px;
+      max-width: 100%;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      box-sizing: border-box;
+    }
+    .compare-filter-chip.active {
+      background: var(--brand);
+      color: #fff;
+      border-color: var(--brand);
+    }
+    .linked-filter-row.active-filter-row td {
+      background: #f8fbfd;
+    }
+"""+ "</style>",
+        1,
+    )
+    inject_script = """
+<script>
+(function () {
+  let activeOverviewKind = 'all';
+  let activeCompareSystemType = 'all';
+  let activeComparePlatform = 'all';
+  let activeCompareProducts = [];
+  window.__activeCompareSystemType = activeCompareSystemType;
+  window.__activeComparePlatform = activeComparePlatform;
+  window.__activeCompareProducts = activeCompareProducts;
+  const activeFilterSummary = document.getElementById('activeFilterSummary');
+  const overviewCompareKeys = new Set(['spend', 'gmv', 'roi', 'impressions', 'cpm', 'total_materials', 'ctr', 'test_new_spend', 'test_new_posts', 'test_new_spend_ratio', 'store_gmv_thb', 'store_visitors']);
+
+  function normalizeText(value) {
+    return value === undefined || value === null ? '' : String(value).trim();
+  }
+
+  function deltaMeta(currentValue, compareValue) {
+    const current = Number(currentValue);
+    const compare = Number(compareValue);
+    if (!Number.isFinite(current) || !Number.isFinite(compare) || compare === 0) return null;
+    const pct = (current - compare) / compare * 100;
+    return {
+      text: `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`,
+      cls: pct > 0 ? 'delta-up' : 'delta-down',
+    };
+  }
+
+  function fmtPct(value) {
+    return `${(Number(value || 0) * 100).toFixed(1)}%`;
+  }
+
+  function fmtCtrPct(value) {
+    return `${(Number(value || 0) * 100).toFixed(2)}%`;
+  }
+
+  function cellValue(row, key) {
+    if (['spend', 'gmv', 'cpm', 'test_new_spend', 'store_gmv_thb'].includes(key)) return fmtMoney(row[key]);
+    if (['impressions', 'total_materials', 'test_new_posts', 'store_visitors'].includes(key)) return fmtInt(row[key]);
+    if (key === 'roi') return Number(row[key] || 0).toFixed(2);
+    if (key === 'ctr') return fmtCtrPct(row[key]);
+    if (key === 'test_new_spend_ratio') return fmtPct(row[key]);
+    return row[key] === undefined || row[key] === null ? '' : String(row[key]);
+  }
+
+  function cellWithCompare(row, key) {
+    const primary = cellValue(row, key);
+    if (!row.__compare || !overviewCompareKeys.has(key)) return primary;
+    const meta = deltaMeta(row[key], row.__compare[key]);
+    if (!meta) return primary;
+    return `<div class="cell-main">${primary}</div><div class="cell-sub ${meta.cls}">${meta.text}</div>`;
+  }
+
+  function rowsByOverviewKind(rows, kind) {
+    if (kind === 'conversion') return rows.filter(row => normalizeText(row.ad_form2) === '\u6536\u5272\u5e7f\u544a');
+    if (kind === 'exposure') return rows.filter(row => normalizeText(row.ad_form2) === '\u79cd\u8349\u5e7f\u544a');
+    return rows;
+  }
+
+  function rowsBySystemType(rows, systemType) {
+    if (!systemType || systemType === 'all') return rows;
+    return rows.filter(row => normalizeText(row.system_type) === systemType);
+  }
+
+  function rowsByPlatform(rows, platform) {
+    if (!platform || platform === 'all') return rows;
+    return rows.filter(row => normalizeText(row.platform) === platform);
+  }
+
+  function rowsByProduct(rows, products) {
+    if (!Array.isArray(products) || !products.length) return rows;
+    const selected = new Set(products.map(normalizeText).filter(Boolean));
+    return rows.filter(row => selected.has(normalizeText(row.product)));
+  }
+
+  function rowsByProductPicker(rows, products) {
+    if (!Array.isArray(products) || !products.length) return rows;
+    const selected = new Set(products.map(normalizeText).filter(Boolean));
+    return rows.filter(row => selected.has(normalizeText(row.product || row.material_product)));
+  }
+
+  function rowsByProductCategory(rows, categories) {
+    if (!Array.isArray(categories) || !categories.length) return rows;
+    const selected = new Set(categories.map(normalizeText).filter(Boolean));
+    const categoryOf = row => {
+      if (typeof window.productCategory === 'function') {
+        return normalizeText(window.productCategory(row.product || row.material_product || ''));
+      }
+      return '';
+    };
+    return rows.filter(row => selected.has(categoryOf(row)));
+  }
+
+  function rowsByMaterialPublishDate(rows, start, end) {
+    const normalizedStart = normalizeText(start);
+    const normalizedEnd = normalizeText(end);
+    if (!normalizedStart && !normalizedEnd) return rows;
+    return rows.filter(row => {
+      const publishDate = normalizeText(row.publish_date);
+      if (!publishDate) return false;
+      if (normalizedStart && publishDate < normalizedStart) return false;
+      if (normalizedEnd && publishDate > normalizedEnd) return false;
+      return true;
+    });
+  }
+
+  function rowsForProductCompare(rows) {
+    return (Array.isArray(rows) ? rows : []).filter(row =>
+      normalizeText(row.ad_type || row['骞垮憡绫诲瀷']).includes('鍚堝垱骞垮憡')
+    );
+  }
+
+  function filterChip(label, value, key) {
+    return `<span class="active-filter-chip">${label}锛?{escapeHtml(value)}<button type="button" data-clear-filter="${key}" aria-label="娓呴櫎绛涢€?>脳</button></span>`;
+  }
+
+  function renderActiveFilterSummary() {
+    if (!activeFilterSummary) return;
+    const chips = [];
+    if (activeOverviewKind === 'conversion') chips.push(filterChip('骞垮憡绫诲瀷', '鍚堝垱杞寲', 'overview'));
+    if (activeOverviewKind === 'exposure') chips.push(filterChip('骞垮憡绫诲瀷', '鍚堝垱鏇濆厜', 'overview'));
+    if (activeCompareSystemType !== 'all') chips.push(filterChip('绯荤粺绫诲瀷', activeCompareSystemType, 'system_type'));
+    if (activeComparePlatform !== 'all') chips.push(filterChip('骞冲彴', activeComparePlatform, 'platform'));
+    activeCompareProducts.forEach(product => chips.push(filterChip('浜у搧', product, 'product:' + product)));
+    (window.__activeProductSelections || []).forEach(product => chips.push(filterChip('浜у搧绛涢€?, product, 'product_picker:' + product)));
+    (window.__activeProductCategorySelections || []).forEach(category => chips.push(filterChip('鍝佺被绛涢€?, category, 'product_category:' + category)));
+    if (normalizeText(window.__activeMaterialPublishStart) || normalizeText(window.__activeMaterialPublishEnd)) {
+      chips.push(filterChip('绱犳潗鍙戝竷鏃堕棿', `${normalizeText(window.__activeMaterialPublishStart) || '涓嶉檺'} ~ ${normalizeText(window.__activeMaterialPublishEnd) || '涓嶉檺'}`, 'material_publish'));
+    }
+    const clearButton = chips.length ? '<button type="button" class="clear-filters-btn" id="clearAllFilters">涓€閿竻闄ょ瓫閫?/button>' : '';
+    activeFilterSummary.innerHTML = chips.length ? chips.join('') + clearButton : '<span class="active-filter-empty">褰撳墠鏈瓫閫?/span>';
+    activeFilterSummary.querySelectorAll('[data-clear-filter]').forEach(btn => {
+      btn.addEventListener('click', event => {
+        event.stopPropagation();
+        const key = btn.dataset.clearFilter || '';
+        if (key === 'overview') activeOverviewKind = 'all';
+        if (key === 'system_type') {
+          activeCompareSystemType = 'all';
+          window.__activeCompareSystemType = activeCompareSystemType;
+        }
+        if (key === 'platform') {
+          activeComparePlatform = 'all';
+          window.__activeComparePlatform = activeComparePlatform;
+        }
+        if (key.startsWith('product:')) {
+          const value = key.slice('product:'.length);
+          activeCompareProducts = activeCompareProducts.filter(item => item !== value);
+          window.__activeCompareProducts = activeCompareProducts;
+        }
+        if (key.startsWith('product_picker:')) {
+          const value = key.slice('product_picker:'.length);
+          const next = (window.__activeProductSelections || []).filter(item => item !== value);
+          if (typeof window.__setProductListFilterState === 'function') window.__setProductListFilterState({ products: next });
+        }
+        if (key.startsWith('product_category:')) {
+          const value = key.slice('product_category:'.length);
+          const next = (window.__activeProductCategorySelections || []).filter(item => item !== value);
+          if (typeof window.__setProductListFilterState === 'function') window.__setProductListFilterState({ categories: next });
+        }
+        if (key === 'material_publish') {
+          if (typeof window.__setProductListFilterState === 'function') window.__setProductListFilterState({ materialPublishStart: '', materialPublishEnd: '' });
+        }
+        rerenderLinkedBoards();
+      });
+    });
+    const clearAllBtn = document.getElementById('clearAllFilters');
+    if (clearAllBtn) {
+      clearAllBtn.addEventListener('click', () => {
+        activeOverviewKind = 'all';
+        activeCompareSystemType = 'all';
+        activeComparePlatform = 'all';
+        activeCompareProducts = [];
+        window.__activeCompareSystemType = activeCompareSystemType;
+        window.__activeComparePlatform = activeComparePlatform;
+        window.__activeCompareProducts = activeCompareProducts;
+        if (typeof window.__setProductListFilterState === 'function') {
+          window.__setProductListFilterState({ products: [], categories: [], postId: '', materialPublishStart: '', materialPublishEnd: '' });
+        }
+        rerenderLinkedBoards();
+      });
+    }
+  }
+
+  function applyGlobalFilters(rows, options = {}) {
+    const includeOverview = options.includeOverview !== false;
+    const includeSystemType = options.includeSystemType !== false;
+    const includePlatform = options.includePlatform !== false;
+    const includeProduct = options.includeProduct !== false;
+    const includeProductPicker = options.includeProductPicker !== false;
+    const includeProductCategory = options.includeProductCategory !== false;
+    const includeMaterialPublish = options.includeMaterialPublish !== false;
+    let scoped = Array.isArray(rows) ? rows.slice() : [];
+    if (includeSystemType) scoped = rowsBySystemType(scoped, activeCompareSystemType);
+    if (includePlatform) scoped = rowsByPlatform(scoped, activeComparePlatform);
+    if (includeProduct) scoped = rowsByProduct(scoped, activeCompareProducts);
+    if (includeProductPicker) scoped = rowsByProductPicker(scoped, window.__activeProductSelections || []);
+    if (includeProductCategory) scoped = rowsByProductCategory(scoped, window.__activeProductCategorySelections || []);
+    if (includeMaterialPublish) scoped = rowsByMaterialPublishDate(scoped, window.__activeMaterialPublishStart, window.__activeMaterialPublishEnd);
+    if (includeOverview) scoped = rowsByOverviewKind(scoped, activeOverviewKind);
+    return scoped;
+  }
+
+  function inDateRange(row, start, end) {
+    const date = normalizeText(row.date);
+    if (!date) return false;
+    if (start && date < start) return false;
+    if (end && date > end) return false;
+    return true;
+  }
+
+  function currentVisibleRows() {
+    const qStart = document.getElementById('qStart')?.value || '';
+    const qEnd = document.getElementById('qEnd')?.value || qStart;
+    const cStart = document.getElementById('cStart')?.value || '';
+    const cEnd = document.getElementById('cEnd')?.value || cStart;
+    return {
+      queryRows: (embedded.queryRaw || []).filter(row => inDateRange(row, qStart, qEnd)),
+      compareRows: (embedded.compareRaw || []).filter(row => inDateRange(row, cStart, cEnd)),
+    };
+  }
+
+  function metricPack(rows, period) {
+    const spend = rows.reduce((acc, row) => acc + Number(row.spend || 0), 0);
+    const gmv = rows.reduce((acc, row) => acc + Number(row.gmv || 0), 0);
+    const impressions = rows.reduce((acc, row) => acc + Number(row.impressions || 0), 0);
+    const clicks = rows.reduce((acc, row) => acc + Number(row.clicks || 0), 0);
+    const totalMaterialIds = new Set(
+      rows
+        .filter(row => Number(row.impressions || 0) > 0)
+        .map(row => normalizeText(row.material_id))
+        .filter(Boolean)
+    );
+    const activePeriod = period || { start: '', end: '' };
+    const isTestNewRow = row => {
+      const publishDate = normalizeText(row.publish_date);
+      return publishDate && publishDate >= activePeriod.start && publishDate <= activePeriod.end;
+    };
+    const testNewRows = rows.filter(isTestNewRow);
+    const testNewSpend = testNewRows.reduce((acc, row) => acc + Number(row.spend || 0), 0);
+    const testNewExposedPostIds = new Set(
+      testNewRows
+        .filter(row => Number(row.impressions || 0) > 0)
+        .map(row => normalizeText(row.material_id))
+        .filter(Boolean)
+    );
+    return {
+      spend,
+      gmv,
+      roi: spend ? gmv / spend : 0,
+      impressions,
+      cpm: impressions ? spend * 1000 / impressions : 0,
+      total_materials: totalMaterialIds.size,
+      ctr: impressions ? clicks / impressions : 0,
+      test_new_spend: testNewSpend,
+      test_new_posts: testNewExposedPostIds.size,
+      test_new_spend_ratio: spend ? testNewSpend / spend : 0,
+    };
+  }
+
+  function renderOverviewTable(sourceRows, compareSourceRows) {
+    const wrap = document.getElementById('hechuangOverviewTable');
+    if (!wrap) return;
+    const queryPeriod = embedded.queryPeriod || { start: '', end: '' };
+    const comparePeriod = embedded.comparePeriod || { start: '', end: '' };
+    const rows = [
+      { label: '\u5408\u521b\u8f6c\u5316', kind: 'conversion', ...metricPack(rowsByOverviewKind(sourceRows, 'conversion'), queryPeriod) },
+      { label: '\u5408\u521b\u66dd\u5149', kind: 'exposure', ...metricPack(rowsByOverviewKind(sourceRows, 'exposure'), queryPeriod) },
+    ];
+    const compareRowsSource = compareSourceRows || [];
+    const compareRows = [
+      { label: '\u5408\u521b\u8f6c\u5316', kind: 'conversion', ...metricPack(rowsByOverviewKind(compareRowsSource, 'conversion'), comparePeriod) },
+      { label: '\u5408\u521b\u66dd\u5149', kind: 'exposure', ...metricPack(rowsByOverviewKind(compareRowsSource, 'exposure'), comparePeriod) },
+    ];
+    const compareMap = new Map(compareRows.map(row => [row.kind, row]));
+    const displayRows = rows.map(row => ({ ...row, __compare: compareMap.get(row.kind) || null }));
+    wrap.innerHTML = `
+      <table data-sortable="1">
+        <thead><tr>
+          <th data-key="ad_type" data-kind="text"><span class="th-label">\u5e7f\u544a\u7c7b\u578b</span><span class="col-resize-handle" data-resize="1"></span></th>
+          <th data-key="spend" data-kind="money"><span class="th-label">\u82b1\u8d39</span><span class="col-resize-handle" data-resize="1"></span></th>
+          <th data-key="roi" data-kind="score"><span class="th-label">ROI</span><span class="col-resize-handle" data-resize="1"></span></th>
+          <th data-key="cpm" data-kind="money"><span class="th-label">CPM</span><span class="col-resize-handle" data-resize="1"></span></th>
+          <th data-key="ctr" data-kind="pct"><span class="th-label">CTR</span><span class="col-resize-handle" data-resize="1"></span></th>
+          <th data-key="gmv" data-kind="money"><span class="th-label">GMV</span><span class="col-resize-handle" data-resize="1"></span></th>
+          <th data-key="impressions" data-kind="int"><span class="th-label">\u66dd\u5149</span><span class="col-resize-handle" data-resize="1"></span></th>
+          <th data-key="total_materials" data-kind="int"><span class="th-label">\u603b\u6295\u653e\u7d20\u6750\u6570\u91cf</span><span class="col-resize-handle" data-resize="1"></span></th>
+          <th data-key="test_new_posts" data-kind="int"><span class="th-label">\u6d4b\u65b0\u6570\u91cf</span><span class="col-resize-handle" data-resize="1"></span></th>
+          <th data-key="test_new_spend" data-kind="money"><span class="th-label">\u6d4b\u65b0\u82b1\u8d39</span><span class="col-resize-handle" data-resize="1"></span></th>
+          <th data-key="test_new_spend_ratio" data-kind="pct"><span class="th-label">\u6d4b\u65b0\u82b1\u8d39\u5360\u6bd4</span><span class="col-resize-handle" data-resize="1"></span></th>
+        </tr></thead>
+        <tbody>
+          ${displayRows.map(row => `
+            <tr class="${activeOverviewKind === row.kind ? 'active-overview-row' : ''}">
+              <td><button type="button" class="overview-chip" data-overview-kind="${row.kind}">${row.label}</button></td>
+              <td class="num">${cellWithCompare(row, 'spend')}</td>
+              <td class="num">${cellWithCompare(row, 'roi')}</td>
+              <td class="num">${cellWithCompare(row, 'cpm')}</td>
+              <td class="num">${cellWithCompare(row, 'ctr')}</td>
+              <td class="num">${cellWithCompare(row, 'gmv')}</td>
+              <td class="num">${cellWithCompare(row, 'impressions')}</td>
+              <td class="num">${cellWithCompare(row, 'total_materials')}</td>
+              <td class="num">${cellWithCompare(row, 'test_new_posts')}</td>
+              <td class="num">${cellWithCompare(row, 'test_new_spend')}</td>
+              <td class="num">${cellWithCompare(row, 'test_new_spend_ratio')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    wrap.querySelectorAll('[data-overview-kind]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const kind = btn.dataset.overviewKind || 'all';
+        activeOverviewKind = activeOverviewKind === kind ? 'all' : kind;
+        rerenderLinkedBoards();
+      });
+    });
+  }
+
+  function bindCompareTableLinkage(containerId, key, activeValue) {
+    const wrap = document.getElementById(containerId);
+    if (!wrap) return;
+    const activeSet = Array.isArray(activeValue) ? new Set(activeValue.map(normalizeText)) : null;
+    wrap.querySelectorAll('tbody tr').forEach(row => {
+      const chip = row.querySelector('.compare-filter-chip');
+      if (!chip) return;
+      const value = normalizeText(chip.textContent);
+      row.classList.add('linked-filter-row');
+      const isActive = activeSet ? activeSet.has(value) : value === activeValue;
+      row.classList.toggle('active-filter-row', isActive);
+      chip.classList.toggle('active', isActive);
+      chip.addEventListener('click', () => {
+        if (key === 'system_type') {
+          activeCompareSystemType = activeCompareSystemType === value ? 'all' : value;
+          window.__activeCompareSystemType = activeCompareSystemType;
+        } else if (key === 'platform') {
+          activeComparePlatform = activeComparePlatform === value ? 'all' : value;
+          window.__activeComparePlatform = activeComparePlatform;
+        } else if (key === 'product') {
+          const current = new Set(activeCompareProducts.map(normalizeText).filter(Boolean));
+          if (current.has(value)) current.delete(value);
+          else current.add(value);
+          activeCompareProducts = Array.from(current);
+          window.__activeCompareProducts = activeCompareProducts;
+        }
+        rerenderLinkedBoards();
+      });
+    });
+  }
+
+  function rerenderLinkedBoards() {
+    const visibleRows = currentVisibleRows();
+    if (typeof window.refreshAllBoards === 'function') {
+      window.refreshAllBoards(visibleRows.queryRows, visibleRows.compareRows);
+    }
+  }
+
+  function patchGlobalRefresh() {
+    if (typeof window.refreshAllBoards !== 'function' || window.__originalRefreshAllBoards) return;
+    window.__originalRefreshAllBoards = window.refreshAllBoards;
+    window.refreshAllBoards = function(qRows, cRows) {
+      const overviewQ = applyGlobalFilters(qRows, { includeOverview: false });
+      const overviewC = applyGlobalFilters(cRows, { includeOverview: false });
+      window.__systemCompareTableQueryRows = applyGlobalFilters(qRows, { includeSystemType: false });
+      window.__systemCompareTableCompareRows = applyGlobalFilters(cRows, { includeSystemType: false });
+      window.__platformCompareTableQueryRows = applyGlobalFilters(qRows, { includePlatform: false });
+      window.__platformCompareTableCompareRows = applyGlobalFilters(cRows, { includePlatform: false });
+      window.__productCompareTableQueryRows = rowsForProductCompare(applyGlobalFilters(qRows, { includeProduct: false }));
+      window.__productCompareTableCompareRows = rowsForProductCompare(applyGlobalFilters(cRows, { includeProduct: false }));
+      renderOverviewTable(overviewQ, overviewC);
+      const scopedQ = applyGlobalFilters(qRows);
+      const scopedC = applyGlobalFilters(cRows);
+      const result = window.__originalRefreshAllBoards(scopedQ, scopedC);
+      renderActiveFilterSummary();
+      bindCompareTableLinkage('kolCompare', 'system_type', activeCompareSystemType);
+      bindCompareTableLinkage('platformCompare', 'platform', activeComparePlatform);
+      bindCompareTableLinkage('productCompare', 'product', activeCompareProducts);
+      return result;
+    };
+  }
+
+  patchGlobalRefresh();
+  if (typeof window.refreshAllBoards === 'function') {
+    window.refreshAllBoards(embedded.queryRaw || [], embedded.compareRaw || []);
+  }
+})();
+</script>
+"""
+    return html_text.replace("</body>", inject_script + "\n</body>", 1)
+
+
+def normalize_text(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
+def extract_post_id_from_ad_name(value: object) -> str:
+    text = normalize_text(value)
+    if not text:
+        return ""
+    match = re.search(r"甯栧瓙_(TH-[^_]+)", text, re.IGNORECASE)
+    if match:
+        return normalize_text(match.group(1))
+    match = re.search(r"(TH-[A-Za-z0-9-]+)", text, re.IGNORECASE)
+    if match:
+        return normalize_text(match.group(1))
+    return ""
+
+
+def extract_kol_from_ad_name(value: object) -> str:
+    text = normalize_text(value)
+    if not text or "甯栧瓙_" not in text:
+        return ""
+    tail = text.split("甯栧瓙_", 1)[1]
+    parts = [normalize_text(part) for part in tail.split("_")]
+    if len(parts) < 2:
+        return ""
+    parts = parts[1:]
+    if parts and re.fullmatch(r"(big|regular)\s*kol\s*绯荤粺", parts[-1], re.IGNORECASE):
+        parts = parts[:-1]
+    parts = [part for part in parts if part]
+    return normalize_text("_".join(parts))
+
+
+def normalize_match_key(value: object) -> str:
+    text = normalize_text(value)
+    if not text:
+        return ""
+    return re.sub(r"[_\s]+$", "", text)
+
+
+def has_readable_material_code(value: object) -> bool:
+    text = normalize_text(value)
+    if not text or text == "-":
+        return False
+    if re.fullmatch(r"(big|regular)\s*kol\s*绯荤粺", text, re.IGNORECASE):
+        return False
+    if text == "鍏朵粬":
+        return False
+    return True
+
+
+def first_non_empty(series: pd.Series, default: str = "") -> str:
+    for value in series:
+        text = normalize_text(value)
+        if text:
+            return text
+    return default
+
+
+def parse_gviz_json(text: str) -> dict:
+    match = re.search(r"setResponse\((.*)\);", text, re.S)
+    if not match:
+        raise ValueError("Failed to parse DMS gviz response.")
+    return json.loads(match.group(1))
+
+
+def fetch_store_base_data() -> pd.DataFrame:
+    workbook = pd.ExcelFile(WORKBOOK_XLSX_URL)
+    target = next((name for name in workbook.sheet_names if normalize_text(name) == "搴楅摵鍩虹鏁版嵁"), None)
+    if not target:
+        raise ValueError("鏈壘鍒?sheet锛氬簵閾哄熀纭€鏁版嵁")
+    df = workbook.parse(target)
+    df.columns = [normalize_text(col) for col in df.columns]
+    return df
+
+
+def build_store_daily(store_df: pd.DataFrame) -> pd.DataFrame:
+    required = ["鍟嗗搧鍚嶇О", "date", "Product Visitors (Visit)", "Sales (Confirmed Order) (THB)"]
+    missing = [col for col in required if col not in store_df.columns]
+    if missing:
+        raise KeyError(f"Store base data is missing columns: {missing}")
+    work = store_df[required].copy()
+    work["鍟嗗搧鍚嶇О"] = work["鍟嗗搧鍚嶇О"].map(normalize_text)
+    work["date"] = pd.to_datetime(work["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    work["store_visitors"] = pd.to_numeric(work["Product Visitors (Visit)"], errors="coerce").fillna(0)
+    work["store_gmv_thb"] = (
+        pd.to_numeric(work["Sales (Confirmed Order) (THB)"], errors="coerce").fillna(0) / 4.8
+    )
+    work = work[(work["鍟嗗搧鍚嶇О"] != "") & work["date"].notna()].copy()
+    grouped = (
+        work.groupby(["鍟嗗搧鍚嶇О", "date"], dropna=False)[["store_visitors", "store_gmv_thb"]]
+        .sum()
+        .reset_index()
+        .rename(columns={"鍟嗗搧鍚嶇О": "product"})
+    )
+    return grouped
+
+
+def inject_store_daily_embedded(html_text: str, store_daily: pd.DataFrame) -> str:
+    match = re.search(r'(<script id="embeddedData" type="application/json">)(.*?)(</script>)', html_text, re.S)
+    if not match:
+        return html_text
+    payload = json.loads(match.group(2))
+    payload["storeDaily"] = [
+        {
+            "product": normalize_text(row["product"]),
+            "date": normalize_text(row["date"]),
+            "store_visitors": float(row["store_visitors"]),
+            "store_gmv_thb": float(row["store_gmv_thb"]),
+        }
+        for _, row in store_daily.iterrows()
+    ]
+    replacement = match.group(1) + json.dumps(payload, ensure_ascii=False).replace("</", "<\\/") + match.group(3)
+    return html_text[: match.start()] + replacement + html_text[match.end() :]
+
+
+def enhance_html_with_store_metrics(html_text: str) -> str:
+    inject_script = """
+<script>
+(function () {
+  function normalizeStoreText(value) {
+    return value === undefined || value === null ? '' : String(value).trim();
+  }
+  function storeMetricMap(start, end) {
+    const map = new Map();
+    (embedded.storeDaily || []).forEach(row => {
+      const name = normalizeStoreText(row.product);
+      const date = normalizeStoreText(row.date);
+      if (!name || !date) return;
+      if (start && date < start) return;
+      if (end && date > end) return;
+      const current = map.get(name) || { store_gmv_thb: 0, store_visitors: 0 };
+      current.store_gmv_thb += Number(row.store_gmv_thb || 0);
+      current.store_visitors += Number(row.store_visitors || 0);
+      map.set(name, current);
+    });
+    return map;
+  }
+
+  const originalDeltaRows = deltaRows;
+  deltaRows = function (qRows, cRows, key, options = {}) {
+    const rows = originalDeltaRows(qRows, cRows, key);
+    if (key !== 'product') return rows;
+    const queryPeriod = options.queryPeriod || { start: '', end: '' };
+    const comparePeriod = options.comparePeriod || { start: '', end: '' };
+    const qMap = storeMetricMap(queryPeriod.start, queryPeriod.end);
+    const cMap = storeMetricMap(comparePeriod.start, comparePeriod.end);
+    return rows.map(row => {
+      const name = normalizeStoreText(row.name);
+      const qStore = qMap.get(name) || { store_gmv_thb: 0, store_visitors: 0 };
+      const cStore = cMap.get(name) || { store_gmv_thb: 0, store_visitors: 0 };
+      return {
+        ...row,
+        store_gmv_thb: qStore.store_gmv_thb,
+        store_visitors: qStore.store_visitors,
+        c: {
+          ...(row.c || {}),
+          store_gmv_thb: cStore.store_gmv_thb,
+          store_visitors: cStore.store_visitors,
+        },
+      };
+    });
+  };
+
+  const originalCompareTable = compareTable;
+  compareTable = function (rows, label, limit, options = {}) {
+    if (!['\\u4ea7\\u54c1', '浜у搧'].includes(label)) return originalCompareTable(rows, label, limit, options);
+    if (!rows.length) return '<p class="small">\\u6682\\u65e0\\u73af\\u6bd4\\u6570\\u636e</p>';
+    const activeValue = options.activeValue || 'all';
+    const activeSet = Array.isArray(activeValue) ? new Set(activeValue.map(item => String(item || '').trim()).filter(Boolean)) : null;
+    const forcedCompareCell = (row, key) => {
+      const primary = cellValue(row, key);
+      const compareRow = row.__compare || row.c || null;
+      if (!compareRow) return primary;
+      const meta = deltaMeta(row[key], compareRow[key]);
+      if (!meta) return primary;
+      return `<div class="cell-main">${primary}</div><div class="cell-sub ${meta.cls}"><strong>${meta.text}</strong></div>`;
+    };
+    const visibleRows = limit ? rows.slice(0, limit) : rows.slice();
+    const normalized = visibleRows.map((row, index) => ({
+      ...row,
+      __compare: row.c || null,
+      __order: index,
+    }));
+    const head = [
+      ['name', label, 'text'],
+      ['store_gmv_thb', '\\u5e97\\u94faGMV', 'money'],
+      ['store_visitors', '\\u5e97\\u94fa\\u8bbf\\u5ba2', 'int'],
+      ['spend', '\\u82b1\\u8d39', 'money'],
+      ['spend_share', '\\u82b1\\u8d39\\u5360\\u6bd4', 'pct'],
+      ['roi', 'ROI', 'roi'],
+      ['cpm', 'CPM', 'money'],
+      ['ctr', 'CTR', 'ctr_pct'],
+      ['gmv', 'GMV', 'money'],
+      ['impressions', '\\u66dd\\u5149', 'int'],
+    ].map(([key, text, kind]) => `<th data-key="${key}" data-kind="${kind}"><span class="th-label">${text}</span><span class="col-resize-handle" data-resize="1"></span></th>`).join('');
+    const body = normalized.map(row => {
+      const name = row.name || '-';
+      const isActive = activeSet ? activeSet.has(name) : (activeValue !== 'all' && name === activeValue);
+      return `<tr class="linked-filter-row ${isActive ? 'active-filter-row' : ''}" data-order="${row.__order}">
+        <td data-key="name" data-sort="${escapeHtml(name)}"><button type="button" class="compare-filter-chip ${isActive ? 'active' : ''}" data-filter-value="${escapeHtml(name)}">${escapeHtml(name)}</button></td>
+        <td class="num" data-key="store_gmv_thb" data-sort="${escapeHtml(String(row.store_gmv_thb ?? ''))}">${forcedCompareCell(row, 'store_gmv_thb')}</td>
+        <td class="num" data-key="store_visitors" data-sort="${escapeHtml(String(row.store_visitors ?? ''))}">${forcedCompareCell(row, 'store_visitors')}</td>
+        <td class="num" data-key="spend" data-sort="${escapeHtml(String(row.spend ?? ''))}">${cellWithCompare(row, 'spend', 'money')}</td>
+        <td class="num" data-key="spend_share" data-sort="${escapeHtml(String(row.spend_share ?? ''))}">${cellWithCompare(row, 'spend_share', 'pct')}</td>
+        <td class="num" data-key="roi" data-sort="${escapeHtml(String(row.roi ?? ''))}">${cellWithCompare(row, 'roi', 'roi')}</td>
+        <td class="num" data-key="cpm" data-sort="${escapeHtml(String(row.cpm ?? ''))}">${cellWithCompare(row, 'cpm', 'money')}</td>
+        <td class="num" data-key="ctr" data-sort="${escapeHtml(String(row.ctr ?? ''))}">${cellWithCompare(row, 'ctr', 'ctr_pct')}</td>
+        <td class="num" data-key="gmv" data-sort="${escapeHtml(String(row.gmv ?? ''))}">${cellWithCompare(row, 'gmv', 'money')}</td>
+        <td class="num" data-key="impressions" data-sort="${escapeHtml(String(row.impressions ?? ''))}">${cellWithCompare(row, 'impressions', 'int')}</td>
+      </tr>`;
+    }).join('');
+    return `<table class="compare-table" data-sortable="1"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  };
+
+  const originalRefreshDynamicCompare = refreshDynamicCompare;
+  refreshDynamicCompare = function (qRows, cRows) {
+    originalRefreshDynamicCompare(qRows, cRows);
+    const qStart = document.getElementById('qStart')?.value || '';
+    const qEnd = document.getElementById('qEnd')?.value || qStart;
+    const cStart = document.getElementById('cStart')?.value || '';
+    const cEnd = document.getElementById('cEnd')?.value || cStart;
+    const productCompareQRows = window.__productCompareTableQueryRows || qRows;
+    const productCompareCRows = window.__productCompareTableCompareRows || cRows;
+    document.getElementById('productCompare').innerHTML = compareTable(
+      deltaRows(productCompareQRows, productCompareCRows, 'product', {
+        queryPeriod: { start: qStart, end: qEnd },
+        comparePeriod: { start: cStart, end: cEnd },
+      }),
+      '\\u4ea7\\u54c1',
+      null,
+      { activeValue: window.__activeCompareProducts || [] }
+    );
+    applyDefaultTableSorts(document);
+  };
+
+  if (typeof currentRows === 'function' && typeof refreshAllBoards === 'function') {
+    const rows = currentRows();
+    refreshAllBoards(rows.qRows, rows.cRows);
+  }
+})();
+</script>
+"""
+    return html_text.replace("</body>", inject_script + "\n</body>", 1)
+
+
+def enhance_html_with_system_paid_materials_compare(html_text: str) -> str:
+    return html_text
+
+
+def fetch_all_data() -> pd.DataFrame:
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(ALL_DATA_CSV_URL, timeout=120)
+            response.raise_for_status()
+            csv_text = response.content.decode("utf-8-sig")
+            df = pd.read_csv(StringIO(csv_text), low_memory=False)
+            df.columns = [normalize_text(col) for col in df.columns]
+            return df
+        except (requests.RequestException, OSError, ValueError) as exc:
+            last_error = exc
+            if attempt < 3:
+                time.sleep(3 * attempt)
+            else:
+                raise RuntimeError("Failed to fetch ALL_data after 3 attempts") from last_error
+
+
+def fetch_dms() -> pd.DataFrame:
+    response = requests.get(DMS_GVIZ_URL, timeout=120)
+    response.raise_for_status()
+    payload = parse_gviz_json(response.text)
+    cols = [normalize_text(col.get("label")) for col in payload["table"]["cols"]]
+    rows = []
+    for row in payload["table"]["rows"]:
+        cells = row.get("c", [])
+        values = []
+        for i in range(len(cols)):
+            cell = cells[i] if i < len(cells) else None
+            values.append(None if cell is None else cell.get("v"))
+        rows.append(values)
+    return pd.DataFrame(rows, columns=cols)
+
+
+def build_dms_lookup(dms: pd.DataFrame) -> pd.DataFrame:
+    keep_cols = ["绱犳潗缂栧彿", "绮変笣鏁?, "杈句汉閲忕骇", "username", "url", "绯荤粺绫诲瀷", "鍐呭骞冲彴", "鍙戝竷鏃堕棿"]
+    missing = [col for col in keep_cols if col not in dms.columns]
+    if missing:
+        raise KeyError(f"DMS 缂哄皯瀛楁锛歿missing}")
+    work = dms[keep_cols].copy()
+    work["绱犳潗缂栧彿"] = work["绱犳潗缂栧彿"].map(normalize_text)
+    work = work[work["绱犳潗缂栧彿"] != ""].copy()
+    work["match_key"] = work["绱犳潗缂栧彿"].map(normalize_match_key)
+    work["绮変笣鏁?] = pd.to_numeric(work["绮変笣鏁?], errors="coerce").fillna(0)
+    grouped = (
+        work.groupby("match_key", dropna=False)
+        .agg(
+            绱犳潗缂栧彿=("绱犳潗缂栧彿", first_non_empty),
+            绮変笣鏁?("绮変笣鏁?, "max"),
+            杈句汉閲忕骇=("杈句汉閲忕骇", first_non_empty),
+            username=("username", first_non_empty),
+            url=("url", first_non_empty),
+            绯荤粺绫诲瀷=("绯荤粺绫诲瀷", first_non_empty),
+            鍐呭骞冲彴=("鍐呭骞冲彴", first_non_empty),
+            鍙戝竷鏃堕棿=("鍙戝竷鏃堕棿", first_non_empty),
+        )
+        .reset_index()
+    )
+    return grouped
+
+
+def default_periods(filtered: pd.DataFrame) -> tuple[base.Period, base.Period]:
+    today = pd.Timestamp(datetime.now().date())
+    query_end = today - pd.Timedelta(days=1)
+    query_start = today.replace(day=1)
+    if query_end < query_start:
+        query_end = query_start
+    prev_month_end = query_start - pd.Timedelta(days=1)
+    compare_start = prev_month_end.replace(day=1)
+    compare_end = min(compare_start + pd.Timedelta(days=query_end.day - 1), prev_month_end)
+    return (
+        base.Period(label="鏌ヨ", start=query_start, end=query_end),
+        base.Period(label="鐜瘮", start=compare_start, end=compare_end),
+    )
+
+
+def build_source_frame(all_data: pd.DataFrame, dms_lookup: pd.DataFrame) -> pd.DataFrame:
+    required_cols = [
+        "鑺辫垂閲戦锛圲SD锛?,
+        "灞曠ず娆℃暟",
+        "鐐瑰嚮閲?,
+        "璐墿杞寲浠峰€?,
+        "璁㈠崟鏁?,
+        "鏃ユ湡",
+        "骞垮憡绫诲瀷",
+        "浜у搧",
+        "绱犳潗缂栧彿",
+        "甯栧瓙ID",
+        "绯荤粺绫诲瀷",
+        "URL",
+        "骞垮憡鍚嶇О",
+        "鍓ф湰鍚嶇О",
+        "绱犳潗鍒涘缓鏃堕棿",
+        "鍒涘缓鏃堕棿",
+        "骞冲彴",
+        "KOL",
+        "骞垮憡褰㈠紡2",
+    ]
+    missing = [col for col in required_cols if col not in all_data.columns]
+    if missing:
+        raise KeyError(f"ALL_data 缂哄皯瀛楁锛歿missing}")
+
+    work = all_data.copy()
+    work["骞垮憡绫诲瀷"] = work["骞垮憡绫诲瀷"].map(normalize_text)
+    work = work[work["骞垮憡绫诲瀷"].str.contains("鍚堝垱骞垮憡", na=False)].copy()
+    if work.empty:
+        raise ValueError("ALL_data 涓病鏈夊箍鍛婄被鍨?鍚堝垱骞垮憡鐨勬暟鎹€?)
+
+    for col in ["甯栧瓙ID", "绱犳潗缂栧彿", "浜у搧", "绯荤粺绫诲瀷", "URL", "骞垮憡鍚嶇О", "鍓ф湰鍚嶇О", "骞冲彴", "KOL"]:
+        work[col] = work[col].map(normalize_text)
+    work["骞垮憡褰㈠紡2"] = work["骞垮憡褰㈠紡2"].map(normalize_text)
+    work["parsed_post_id"] = work["骞垮憡鍚嶇О"].map(extract_post_id_from_ad_name)
+    work["parsed_kol_name"] = work["骞垮憡鍚嶇О"].map(extract_kol_from_ad_name)
+
+    work["dms_match_id"] = work["甯栧瓙ID"]
+    work.loc[work["dms_match_id"] == "", "dms_match_id"] = work["parsed_post_id"]
+    work.loc[work["dms_match_id"] == "", "dms_match_id"] = work["绱犳潗缂栧彿"]
+    work["dms_match_key"] = work["dms_match_id"].map(normalize_match_key)
+
+    merged = work.merge(
+        dms_lookup,
+        left_on="dms_match_key",
+        right_on="match_key",
+        how="left",
+        suffixes=("", "_dms"),
+    )
+    dms_url = merged["url"].map(normalize_text) if "url" in merged.columns else ""
+
+    merged["date"] = pd.to_datetime(merged["鏃ユ湡"], errors="coerce").dt.normalize()
+    merged = merged[merged["date"].notna()].copy()
+    merged["post_id"] = merged["甯栧瓙ID"]
+    merged.loc[merged["post_id"] == "", "post_id"] = merged["parsed_post_id"]
+
+    merged["material_id"] = merged["甯栧瓙ID"]
+    merged.loc[merged["material_id"] == "", "material_id"] = merged["parsed_post_id"]
+    merged.loc[merged["material_id"] == "", "material_id"] = merged["绱犳潗缂栧彿"]
+    merged.loc[merged["material_id"] == "", "material_id"] = merged["URL"]
+    merged.loc[merged["material_id"] == "", "material_id"] = merged["骞垮憡鍚嶇О"]
+    merged = merged[merged["material_id"] != ""].copy()
+
+    merged["material_name"] = merged["鍓ф湰鍚嶇О"]
+    merged.loc[merged["material_name"] == "", "material_name"] = merged["骞垮憡鍚嶇О"]
+    merged.loc[merged["material_name"] == "", "material_name"] = merged["material_id"]
+    merged["material_code"] = merged["绱犳潗缂栧彿_dms"].map(normalize_text) if "绱犳潗缂栧彿_dms" in merged.columns else ""
+    merged.loc[merged["material_code"] == "", "material_code"] = merged["绱犳潗缂栧彿"]
+    merged.loc[merged["material_code"] == "", "material_code"] = merged["material_id"]
+    merged["has_readable_material_code"] = merged["material_code"].map(has_readable_material_code)
+    merged.loc[~merged["has_readable_material_code"], "material_code"] = "-"
+
+    merged["product"] = merged["浜у搧"]
+    merged["material_product"] = merged["浜у搧"]
+    merged["platform"] = merged["骞冲彴"]
+    merged.loc[merged["platform"] == "", "platform"] = merged["鍐呭骞冲彴"].map(normalize_text)
+    merged.loc[merged["platform"] == "", "platform"] = "-"
+
+    merged["username"] = merged["username"].map(normalize_text)
+    merged.loc[merged["username"] == "", "username"] = merged["KOL"]
+    merged.loc[merged["username"] == "", "username"] = merged["parsed_kol_name"]
+    merged.loc[merged["username"] == "", "username"] = "-"
+
+    merged["system_type"] = merged["绯荤粺绫诲瀷"]
+    merged.loc[merged["system_type"] == "", "system_type"] = merged["绯荤粺绫诲瀷_dms"].map(normalize_text)
+    merged.loc[merged["system_type"] == "", "system_type"] = "鍏朵粬"
+
+    merged["url"] = merged["URL"]
+    merged.loc[merged["url"] == "", "url"] = dms_url
+    merged.loc[merged["url"] == "", "url"] = "-"
+    merged["source_url"] = merged["url"]
+
+    merged["fans"] = pd.to_numeric(merged["绮変笣鏁?], errors="coerce").fillna(0)
+    merged["scale_raw"] = merged["杈句汉閲忕骇"].map(normalize_text)
+
+    for src, dst in [
+        ("鑺辫垂閲戦锛圲SD锛?, "spend"),
+        ("灞曠ず娆℃暟", "impressions"),
+        ("鐐瑰嚮閲?, "clicks"),
+        ("璁㈠崟鏁?, "orders"),
+        ("璐墿杞寲浠峰€?, "gmv"),
+    ]:
+        merged[dst] = pd.to_numeric(merged[src], errors="coerce").fillna(0)
+        merged.loc[merged[dst] < 0, dst] = 0
+
+    merged["add_cart_gmv"] = 0.0
+    merged["reach"] = merged["impressions"]
+    merged["completion_rate"] = 0.0
+
+    dms_publish_candidates = pd.to_datetime(merged["鍙戝竷鏃堕棿"], errors="coerce")
+    publish_candidates = pd.to_datetime(merged["绱犳潗鍒涘缓鏃堕棿"], errors="coerce")
+    create_candidates = pd.to_datetime(merged["鍒涘缓鏃堕棿"], errors="coerce")
+    merged["earliest_publish_time"] = dms_publish_candidates.fillna(publish_candidates).fillna(create_candidates)
+    merged["publish_time"] = merged["earliest_publish_time"]
+    merged["publish_date"] = merged["publish_time"].dt.strftime("%Y-%m-%d").fillna("")
+
+    keep = [
+        "date",
+        "post_id",
+        "material_id",
+        "material_code",
+        "has_readable_material_code",
+        "material_name",
+        "material_product",
+        "product",
+        "earliest_publish_time",
+        "publish_time",
+        "publish_date",
+        "spend",
+        "impressions",
+        "clicks",
+        "orders",
+        "gmv",
+        "add_cart_gmv",
+        "reach",
+        "completion_rate",
+        "source_url",
+        "fans",
+        "scale_raw",
+        "username",
+        "url",
+        "platform",
+        "system_type",
+        "ad_form2",
+        "骞垮憡绫诲瀷",
+    ]
+    merged["ad_form2"] = merged["骞垮憡褰㈠紡2"]
+    return merged[keep].copy()
+
+
+def filter_period(df: pd.DataFrame, period: base.Period) -> pd.DataFrame:
+    return df[(df["date"] >= period.start) & (df["date"] <= period.end)].copy()
+
+
+def main() -> None:
+    print("姝ｅ湪璇诲彇 Google Sheet: ALL_data / DMS")
+    all_data = fetch_all_data()
+    dms = fetch_dms()
+    dms_lookup = build_dms_lookup(dms)
+
+    source = build_source_frame(all_data, dms_lookup)
+    query_period, compare_period = default_periods(all_data[all_data["骞垮憡绫诲瀷"].map(normalize_text) == "鍚堝垱骞垮憡"])
+
+    query_raw = filter_period(source, query_period)
+    compare_raw = filter_period(source, compare_period)
+    if query_raw.empty:
+        raise ValueError("鏌ヨ鍛ㄦ湡鍐呮病鏈夋湁鏁堝悎鍒涘箍鍛婃暟鎹€?)
+    if compare_raw.empty:
+        raise ValueError("鐜瘮鍛ㄦ湡鍐呮病鏈夋湁鏁堝悎鍒涘箍鍛婃暟鎹€?)
+
+    material = base.aggregate_material(query_raw, query_period)
+    compare_material = base.aggregate_material(compare_raw, query_period)
+    generated_at_text = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+    html_text = base.make_html(
+        query_period=query_period,
+        compare_period=compare_period,
+        query_files=[Path("GoogleSheet/ALL_data")],
+        compare_files=[Path("GoogleSheet/ALL_data"), Path("GoogleSheet/DMS")],
+        query_raw=query_raw,
+        compare_raw=compare_raw,
+        material=material,
+        compare_material=compare_material,
+        generated_at_text=generated_at_text,
+    )
+    html_text = enhance_html_for_live_refresh(html_text)
+    html_text = enhance_html_with_overview_filter(html_text)
+    html_text = enhance_html_with_system_paid_materials_compare(html_text)
+    OUTPUT_PATH.write_text(html_text, encoding="utf-8")
+    print(f"宸茬敓鎴愶細{OUTPUT_PATH}")
+    print(f"鏌ヨ鍛ㄦ湡锛歿query_period.text}")
+    print(f"鐜瘮鍛ㄦ湡锛歿compare_period.text}")
+    print(f"ALL_data 鍚堝垱骞垮憡琛屾暟锛歿len(source):,}")
+    print(f"DMS 绮変笣鍖归厤鍚庨潪闆剁矇涓濈礌鏉愭暟锛歿int((material['fans'] > 0).sum()):,}")
+
+
+if __name__ == "__main__":
+    main()
