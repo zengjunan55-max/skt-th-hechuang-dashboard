@@ -101,10 +101,24 @@ def enhance_html_for_live_refresh(html_text: str) -> str:
   const SHEET_ID = "{SHEET_ID}";
   const ALL_DATA_GVIZ_URL = "https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:__allDataRefreshHandler&sheet=ALL_data&range=A1:AL300000";
   const DMS_GVIZ_URL = "https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:__dmsRefreshHandler&sheet=DMS&range=A1:CV10000";
+  const EMBEDDED_SCALE = 6.9;
   const refreshBtn = document.getElementById('refreshNow');
   const refreshStatus = document.getElementById('refreshStatus');
   const updateTimeNode = document.querySelector('.update-time');
   const periodSummaryNode = document.querySelector('header > p');
+
+  function scaleEmbeddedRows(rows) {{
+    if (!Array.isArray(rows)) return [];
+    return rows.map(row => {{
+      if (row && row.__scaledBy69) return row;
+      return {{
+        ...row,
+        spend: Math.max(0, Number(row?.spend || 0)) * EMBEDDED_SCALE,
+        gmv: Math.max(0, Number(row?.gmv || 0)) * EMBEDDED_SCALE,
+        __scaledBy69: true,
+      }};
+    }});
+  }}
 
   function setRefreshStatus(state) {{
     if (!refreshStatus) return;
@@ -293,6 +307,7 @@ def enhance_html_for_live_refresh(html_text: str) -> str:
   }}
 
   function buildSourceRows(allRows, dmsMap) {{
+    const scale = 6.9;
     const filtered = allRows.filter(row => normalizeText(row['骞垮憡绫诲瀷']).includes('鍚堝垱骞垮憡'));
     return filtered.map(row => {{
       const postId = normalizeText(row['甯栧瓙ID']);
@@ -322,8 +337,8 @@ def enhance_html_for_live_refresh(html_text: str) -> str:
         source_url: normalizeText(row['URL']) || normalizeText(dms['url']) || '-',
         publish_date: publishDate,
         ad_form2: normalizeText(row['骞垮憡褰㈠紡2']),
-        spend: Math.max(0, toNumber(row['鑺辫垂閲戦锛圲SD锛?])),
-        gmv: Math.max(0, toNumber(row['璐墿杞寲浠峰€?])),
+        spend: Math.max(0, toNumber(row['鑺辫垂閲戦锛圲SD锛?])) * scale,
+        gmv: Math.max(0, toNumber(row['璐墿杞寲浠峰€?])) * scale,
         orders: Math.max(0, toNumber(row['璁㈠崟鏁?])),
         impressions: Math.max(0, toNumber(row['灞曠ず娆℃暟'])),
         clicks: Math.max(0, toNumber(row['鐐瑰嚮閲?])),
@@ -835,6 +850,8 @@ def enhance_html_with_overview_filter(html_text: str) -> str:
   }
 
   patchGlobalRefresh();
+  embedded.queryRaw = scaleEmbeddedRows(embedded.queryRaw);
+  embedded.compareRaw = scaleEmbeddedRows(embedded.compareRaw);
   if (typeof window.refreshAllBoards === 'function') {
     window.refreshAllBoards(embedded.queryRaw || [], embedded.compareRaw || []);
   }
