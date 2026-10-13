@@ -1247,6 +1247,269 @@ def enhance_html_with_system_paid_materials_compare(html_text: str) -> str:
     return html_text
 
 
+def enhance_html_with_trend_scaling(html_text: str) -> str:
+    toolbar_css = """
+    .trend-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .trend-toolbar-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .trend-mode-toggle {
+      display: inline-grid;
+      grid-template-columns: repeat(2, minmax(72px, 1fr));
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #f4f7f9;
+    }
+    .trend-mode-button {
+      min-height: 30px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .trend-mode-button:hover { color: var(--brand); }
+    .trend-mode-button.active {
+      background: #fff;
+      color: var(--brand);
+      box-shadow: 0 1px 4px rgba(31, 65, 81, 0.14);
+    }
+    .trend-mode-button:focus-visible {
+      outline: 2px solid rgba(24, 119, 147, 0.28);
+      outline-offset: 1px;
+    }
+"""
+    toolbar_html = """<div class="trend-toolbar" aria-label="曲线显示方式">
+        <span class="trend-toolbar-label">曲线显示</span>
+        <div class="trend-mode-toggle" role="group" aria-label="曲线显示方式">
+          <button class="trend-mode-button" type="button" data-trend-mode="actual" title="按指标真实数值绘制">实际值</button>
+          <button class="trend-mode-button" type="button" data-trend-mode="index" title="各曲线首个有效日设为 100">趋势</button>
+        </div>
+      </div>
+      """
+    html_text = html_text.replace("</style>", toolbar_css + "\n</style>", 1)
+    html_text = html_text.replace(
+        '<div class="trend-canvas-wrap"><canvas id="compareTrendChart"></canvas></div>',
+        toolbar_html + '<div class="trend-canvas-wrap"><canvas id="compareTrendChart"></canvas></div>',
+        1,
+    )
+
+    replacements = [
+        (
+            "    let activeMetrics = ['impressions', 'ctr'];",
+            """    let activeMetrics = ['impressions', 'ctr'];
+    let trendScaleMode = 'auto';
+    let lastTrendQueryRows = [];
+    let lastTrendCompareRows = [];""",
+        ),
+        (
+            """    function metricAxisGroup(metric) {
+      return ['roi', 'cpm', 'ctr'].includes(metric) ? 'right' : 'left';
+    }
+    const hiddenTrendSeries = new Set();""",
+            """    function metricAxisGroup(metric) {
+      return ['roi', 'cpm', 'ctr'].includes(metric) ? 'right' : 'left';
+    }
+    function resolvedTrendScaleMode() {
+      return trendScaleMode === 'auto'
+        ? (activeMetricList().length > 1 ? 'index' : 'actual')
+        : trendScaleMode;
+    }
+    function syncTrendScaleControls(mode = resolvedTrendScaleMode()) {
+      document.querySelectorAll('.trend-mode-button[data-trend-mode]').forEach(button => {
+        const active = button.dataset.trendMode === mode;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    }
+    function bindTrendScaleControls() {
+      document.querySelectorAll('.trend-mode-button[data-trend-mode]').forEach(button => {
+        if (button.dataset.trendModeBound === '1') return;
+        button.dataset.trendModeBound = '1';
+        button.addEventListener('click', () => {
+          trendScaleMode = button.dataset.trendMode;
+          const redraw = () => drawTrend(lastTrendQueryRows, lastTrendCompareRows);
+          const wrap = document.querySelector('.trend-canvas-wrap');
+          if (!wrap || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            redraw();
+            return;
+          }
+          wrap.classList.remove('trend-entering');
+          wrap.classList.add('trend-refreshing');
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            redraw();
+            wrap.classList.remove('trend-refreshing');
+            wrap.classList.add('trend-entering');
+            window.setTimeout(() => wrap.classList.remove('trend-entering'), 420);
+          }));
+        });
+      });
+      syncTrendScaleControls();
+    }
+    const hiddenTrendSeries = new Set();""",
+        ),
+        (
+            """    function drawTrend(qRows, cRows) {
+      const canvas = document.getElementById('compareTrendChart');""",
+            """    function drawTrend(qRows, cRows) {
+      const canvas = document.getElementById('compareTrendChart');
+      lastTrendQueryRows = qRows;
+      lastTrendCompareRows = cRows;""",
+        ),
+        (
+            """      const selectedMetrics = activeMetricList();
+      const qDaily = byDay(qRows);
+      const cDaily = byDay(cRows);
+      const len = Math.max(qDaily.length, cDaily.length, 1);
+      const leftMetrics = selectedMetrics.filter(metric => metricAxisGroup(metric) === 'left');
+      const rightMetrics = selectedMetrics.filter(metric => metricAxisGroup(metric) === 'right');
+      function axisRange(metricsForAxis) {
+        const values = metricsForAxis.flatMap(metric =>
+          qDaily.map(r => metricValue(r, metric)).concat(cDaily.map(r => metricValue(r, metric)))
+        ).filter(v => Number.isFinite(v));
+        if (!values.length) return { min: 0, max: 1 };
+        const rawMin = Math.min(...values);
+        const rawMax = Math.max(...values);
+        const span = rawMax - rawMin;
+        const onlySmall = metricsForAxis.every(metric => ['roi', 'cpm', 'ctr'].includes(metric));
+        const padding = span === 0 ? Math.max(Math.abs(rawMax) * 0.2, onlySmall ? 0.001 : 1) : span * 0.18;
+        let min = Math.max(0, rawMin - padding);
+        let max = rawMax + padding;
+        if (max === min) max = min + 1;
+        return { min, max };
+      }""",
+            """      const selectedMetrics = activeMetricList();
+      const scaleMode = resolvedTrendScaleMode();
+      syncTrendScaleControls(scaleMode);
+      const qDaily = byDay(qRows);
+      const cDaily = byDay(cRows);
+      const len = Math.max(qDaily.length, cDaily.length, 1);
+      function firstValidBaseline(rows, metric) {
+        const values = rows.map(row => metricValue(row, metric)).filter(value => Number.isFinite(value));
+        return values.find(value => value !== 0) || 1;
+      }
+      const qBaselines = new Map(selectedMetrics.map(metric => [metric, firstValidBaseline(qDaily, metric)]));
+      const cBaselines = new Map(selectedMetrics.map(metric => [metric, firstValidBaseline(cDaily, metric)]));
+      function plotValue(row, metric, series) {
+        const rawValue = metricValue(row, metric);
+        if (scaleMode === 'actual') return rawValue;
+        const baseline = series === 'query' ? qBaselines.get(metric) : cBaselines.get(metric);
+        return baseline ? rawValue / baseline * 100 : 0;
+      }
+      function plotValueLabel(value, metric) {
+        if (scaleMode === 'actual') return fmtAxis(value, metric);
+        return Number(value || 0).toFixed(Math.abs(value) < 10 ? 1 : 0);
+      }
+      const useSingleAxis = scaleMode === 'index' || selectedMetrics.length === 1;
+      const leftMetrics = useSingleAxis
+        ? selectedMetrics
+        : selectedMetrics.filter(metric => metricAxisGroup(metric) === 'left');
+      const rightMetrics = useSingleAxis
+        ? []
+        : selectedMetrics.filter(metric => metricAxisGroup(metric) === 'right');
+      function axisRange(metricsForAxis) {
+        const values = metricsForAxis.flatMap(metric =>
+          qDaily.map(row => plotValue(row, metric, 'query'))
+            .concat(cDaily.map(row => plotValue(row, metric, 'compare')))
+        ).filter(v => Number.isFinite(v));
+        if (!values.length) return { min: 0, max: 1 };
+        const rawMin = Math.min(...values);
+        const rawMax = Math.max(...values);
+        const span = rawMax - rawMin;
+        const onlySmall = metricsForAxis.every(metric => ['roi', 'cpm', 'ctr'].includes(metric));
+        const minimumPadding = scaleMode === 'index'
+          ? 5
+          : Math.max(Math.abs(rawMax) * 0.08, onlySmall ? 0.001 : 1);
+        const padding = span === 0 ? minimumPadding : span * 0.1;
+        let min = rawMin - padding;
+        let max = rawMax + padding;
+        if (scaleMode === 'actual' && rawMin >= 0 && min < 0 && rawMin <= padding) min = 0;
+        if (max === min) max = min + 1;
+        return { min, max };
+      }""",
+        ),
+        (
+            "      const yForMetric = metric => metricAxisGroup(metric) === 'right' ? yRight : yLeft;",
+            "      const yForMetric = metric => rightMetrics.includes(metric) ? yRight : yLeft;",
+        ),
+        (
+            "      ctx.fillText(selectedMetrics.map(metricDisplayName).join(' / '), pad.left, 14);",
+            """      const chartTitle = scaleMode === 'index'
+          ? '趋势指数（首个有效日 = 100）'
+          : selectedMetrics.map(metricDisplayName).join(' / ');
+        ctx.fillText(chartTitle, pad.left, 14);""",
+        ),
+        (
+            "const leftLabel = fmtAxis(leftRange.min + (leftRange.max - leftRange.min) * t, leftMetrics[0]);",
+            "const leftLabel = plotValueLabel(leftRange.min + (leftRange.max - leftRange.min) * t, leftMetrics[0]);",
+        ),
+        (
+            "const rightLabel = fmtAxis(rightRange.min + (rightRange.max - rightRange.min) * t, rightMetrics[0]);",
+            "const rightLabel = plotValueLabel(rightRange.min + (rightRange.max - rightRange.min) * t, rightMetrics[0]);",
+        ),
+        (
+            "const py = yScale(metricValue(row, metric));",
+            "const py = yScale(plotValue(row, metric, series));",
+        ),
+        (
+            """            const px = x(idx);
+            const py = yScale(metricValue(row, metric));
+            ctx.beginPath();""",
+            """            const px = x(idx);
+            const indexedValue = plotValue(row, metric, series);
+            const py = yScale(indexedValue);
+            ctx.beginPath();""",
+        ),
+        (
+            "hoverPoints.push({ idx, series, metric, date: row.date, value: metricValue(row, metric), px, py, color });",
+            "hoverPoints.push({ idx, series, metric, date: row.date, value: metricValue(row, metric), indexedValue, px, py, color });",
+        ),
+        (
+            """            ctx.font = '11px Microsoft YaHei, Arial';
+            ctx.fillStyle = color;
+            ctx.fillText(fmtAxis(metricValue(first, metric), metric), x(0) + 5, yScale(metricValue(first, metric)) - 6);
+            const lastText = fmtAxis(metricValue(last, metric), metric);
+            ctx.fillText(lastText, x(data.length - 1) - ctx.measureText(lastText).width - 6, yScale(metricValue(last, metric)) - 6);""",
+            """            const firstValue = plotValue(first, metric, series);
+            const lastValue = plotValue(last, metric, series);
+            ctx.font = '11px Microsoft YaHei, Arial';
+            ctx.fillStyle = color;
+            ctx.fillText(plotValueLabel(firstValue, metric), x(0) + 5, yScale(firstValue) - 6);
+            const lastText = plotValueLabel(lastValue, metric);
+            ctx.fillText(lastText, x(data.length - 1) - ctx.measureText(lastText).width - 6, yScale(lastValue) - 6);""",
+        ),
+        (
+            """            const label = `${metricDisplayName(point.metric)} ${periodLabel}`;
+            return `<div class="trend-tooltip-row"><span class="trend-tooltip-dot" style="background:${escapeHtml(point.color)}"></span><span>${escapeHtml(label)} ${escapeHtml(metricFormatter(point.metric, point.value))}</span></div>`;""",
+            """            const label = `${metricDisplayName(point.metric)} ${periodLabel}`;
+            const indexText = scaleMode === 'index' ? ` · 指数 ${plotValueLabel(point.indexedValue, point.metric)}` : '';
+            return `<div class="trend-tooltip-row"><span class="trend-tooltip-dot" style="background:${escapeHtml(point.color)}"></span><span>${escapeHtml(label)} ${escapeHtml(metricFormatter(point.metric, point.value))}${escapeHtml(indexText)}</span></div>`;""",
+        ),
+        (
+            "    bindDatePickers();\n    bindMaterialPublishFilters();",
+            "    bindDatePickers();\n    bindTrendScaleControls();\n    bindMaterialPublishFilters();",
+        ),
+    ]
+    for old, new in replacements:
+        if old not in html_text:
+            raise ValueError(f"Trend scaling patch target not found: {old[:80]!r}")
+        html_text = html_text.replace(old, new, 1)
+    return html_text
+
+
 def enhance_html_with_interaction_polish(html_text: str) -> str:
     polish_css = """
     .cmp-card {
@@ -1610,6 +1873,7 @@ def main() -> None:
     html_text = enhance_html_for_live_refresh(html_text)
     html_text = enhance_html_with_overview_filter(html_text)
     html_text = enhance_html_with_system_paid_materials_compare(html_text)
+    html_text = enhance_html_with_trend_scaling(html_text)
     html_text = enhance_html_with_interaction_polish(html_text)
     OUTPUT_PATH.write_text(html_text, encoding="utf-8")
     print(f"宸茬敓鎴愶細{OUTPUT_PATH}")
