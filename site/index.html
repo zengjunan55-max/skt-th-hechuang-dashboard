@@ -886,10 +886,10 @@
         </div>
       </div>
       <div class="trend-canvas-wrap"><canvas id="compareTrendChart"></canvas></div>
-      <h3>分系统类型环比</h3>
+      <h3>分帖子类型环比</h3>
       <div class="table-wrap" id="kolCompare">
     <table class="compare-table" data-sortable="1">
-      <thead><tr><th data-key="name" data-kind="text"><span class="th-label">系统类型</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="spend" data-kind="money"><span class="th-label">花费</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="spend_share" data-kind="pct"><span class="th-label">花费占比</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="roi" data-kind="roi"><span class="th-label">ROI</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="cpm" data-kind="money"><span class="th-label">CPM</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="ctr" data-kind="pct"><span class="th-label">CTR</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="gmv" data-kind="money"><span class="th-label">GMV</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="impressions" data-kind="int"><span class="th-label">曝光</span><span class="col-resize-handle" data-resize="1"></span></th></tr></thead>
+      <thead><tr><th data-key="name" data-kind="text"><span class="th-label">帖子类型</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="spend" data-kind="money"><span class="th-label">花费</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="spend_share" data-kind="pct"><span class="th-label">花费占比</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="roi" data-kind="roi"><span class="th-label">ROI</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="cpm" data-kind="money"><span class="th-label">CPM</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="ctr" data-kind="pct"><span class="th-label">CTR</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="gmv" data-kind="money"><span class="th-label">GMV</span><span class="col-resize-handle" data-resize="1"></span></th><th data-key="impressions" data-kind="int"><span class="th-label">曝光</span><span class="col-resize-handle" data-resize="1"></span></th></tr></thead>
       <tbody>
             <tr data-order="0">
               <td data-sort="Regular KOL 系统">Regular KOL 系统</td>
@@ -2783,7 +2783,7 @@
       document.getElementById('compareCards').innerHTML = compareCards(q, c);
       bindCompareCards(qRows, cRows);
       drawTrend(qRows, cRows);
-      document.getElementById('kolCompare').innerHTML = compareTable(deltaRows(systemCompareQRows, systemCompareCRows, 'system_type'), '系统类型', 10, { activeValue: window.__activeCompareSystemType || 'all' });
+      document.getElementById('kolCompare').innerHTML = compareTable(deltaRows(systemCompareQRows, systemCompareCRows, 'post_type'), '帖子类型', 10, { activeValue: window.__activeCompareSystemType || 'all' });
       document.getElementById('platformCompare').innerHTML = compareTable(deltaRows(platformCompareQRows, platformCompareCRows, 'platform'), '平台', 10, { activeValue: window.__activeComparePlatform || 'all' });
       document.getElementById('productCompare').innerHTML = compareTable(deltaRows(productCompareQRows, productCompareCRows, 'product'), '产品', null, { activeValue: window.__activeCompareProducts || [] });
       applyDefaultTableSorts(document);
@@ -2886,9 +2886,9 @@
   const refreshStatus = document.getElementById('refreshStatus');
   const updateTimeNode = document.querySelector('.update-time');
   const periodSummaryNode = document.querySelector('header > p');
-  const REFRESH_CACHE_VERSION = 1;
-  const REFRESH_CACHE_NAME = 'hechuang-dashboard-refresh-v1';
-  const REFRESH_CACHE_KEY = 'hechuang-dashboard-refresh-v1';
+  const REFRESH_CACHE_VERSION = 2;
+  const REFRESH_CACHE_NAME = 'hechuang-dashboard-refresh-v2';
+  const REFRESH_CACHE_KEY = 'hechuang-dashboard-refresh-v2';
   const REFRESH_CACHE_URL = window.location.origin && window.location.origin !== 'null'
     ? window.location.origin + '/__hechuang_cache__/latest.json'
     : '';
@@ -3163,6 +3163,7 @@
       const dms = dmsMap.get(matchId) || {};
       const materialId = postId || materialNo || normalizeText(row['URL']) || normalizeText(row['广告名称']);
       const publishDate = formatDateOnly(dms['发布时间']) || formatDateOnly(row['素材创建时间']) || formatDateOnly(row['创建时间']);
+      const postType = normalizeText(row['帖子类型']) || '其他';
       const systemType = normalizeText(row['系统类型']) || normalizeText(dms['系统类型']) || '其他';
       return {
         date: formatDateOnly(row['日期']),
@@ -3176,6 +3177,7 @@
         product: normalizeText(row['产品']),
         platform: normalizeText(row['平台']) || normalizeText(dms['内容平台']) || '-',
         username: normalizeText(dms['username']) || normalizeText(row['KOL']) || '-',
+        post_type: postType,
         system_type: systemType,
         scale_label: normalizeScaleBySystem(systemType),
         scale_raw: normalizeText(dms['达人量级']),
@@ -3433,7 +3435,7 @@
 
   function rowsBySystemType(rows, systemType) {
     if (!systemType || systemType === 'all') return rows;
-    return rows.filter(row => normalizeText(row.system_type) === systemType);
+    return rows.filter(row => normalizeText(row.post_type) === systemType);
   }
 
   function rowsByPlatform(rows, platform) {
@@ -3491,7 +3493,7 @@
   function renderActiveFilterSummary() {
     if (!activeFilterSummary) return;
     const chips = [];
-    if (activeCompareSystemType !== 'all') chips.push(filterChip('系统类型', activeCompareSystemType, 'system_type'));
+    if (activeCompareSystemType !== 'all') chips.push(filterChip('帖子类型', activeCompareSystemType, 'system_type'));
     if (activeComparePlatform !== 'all') chips.push(filterChip('平台', activeComparePlatform, 'platform'));
     activeCompareProducts.forEach(product => chips.push(filterChip('产品', product, 'product:' + product)));
     (window.__activeProductSelections || []).forEach(product => chips.push(filterChip('产品筛选', product, 'product_picker:' + product)));
@@ -3869,11 +3871,11 @@
         };
       });
     };
-    const systemLabel = document.querySelector('#kolCompare table thead th .th-label')?.textContent?.trim() || '系统类型';
+    const systemLabel = document.querySelector('#kolCompare table thead th .th-label')?.textContent?.trim() || '帖子类型';
     const platformLabel = document.querySelector('#platformCompare table thead th .th-label')?.textContent?.trim() || '平台';
     const productLabel = document.querySelector('#productCompare table thead th .th-label')?.textContent?.trim() || '产品';
     document.getElementById('kolCompare').innerHTML = compareTable(
-      decorateCompareRows(systemCompareQRows, systemCompareCRows, 'system_type'),
+      decorateCompareRows(systemCompareQRows, systemCompareCRows, 'post_type'),
       systemLabel,
       10,
       { activeValue: window.__activeCompareSystemType || 'all' }
