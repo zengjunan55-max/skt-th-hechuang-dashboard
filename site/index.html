@@ -583,6 +583,20 @@
       flex: 0 0 10px;
     }
     .small { font-size: 12px; color: var(--muted); }
+    .recommendation-rules-note {
+      margin: 10px 0 14px;
+      padding: 12px 14px;
+      border: 1px solid rgba(99, 102, 241, 0.18);
+      border-radius: 12px;
+      background: rgba(99, 102, 241, 0.045);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .recommendation-rules-note strong { color: var(--text); }
+    .recommendation-rules-note-title { margin-bottom: 4px; color: var(--text); font-weight: 700; }
+    .recommendation-rules-note ul { margin: 6px 0 0; padding-left: 18px; }
+    .recommendation-rules-note li { margin: 2px 0; }
     @media (max-width: 1180px) {
       .kpis, .cmp-cards { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
       .grid-2 { grid-template-columns: 1fr; }
@@ -1145,6 +1159,18 @@
     <section id="productSection">
       <h2>分产品素材列表</h2>
       <p class="small">新素材规则：按顶部素材发布时间筛选器范围计算；未选择时，默认以刷新当天为基准，往前推 30 天内发布且有花费的帖子去重数量。</p>
+      <div class="recommendation-rules-note" id="recommendationRulesNote">
+        <div class="recommendation-rules-note-title">“建议”判定标准（合创转化）</div>
+        <div>金额门槛按美元展示，计算时按当前汇率 1 USD = 6.8 CNY 换算；“平均 ROI”指当前筛选范围内合创转化素材的平均 ROI。</div>
+        <ul>
+          <li><strong>潜力素材 P0</strong>：花费 &gt; $30，ROI &gt; 平均 ROI × 1.5</li>
+          <li><strong>进一步观察 P1</strong>：花费 &gt; $20，ROI &gt; 4</li>
+          <li><strong>新素材 立即停投 P2</strong>：新素材、花费 &gt; $10、ROI &lt; 2</li>
+          <li><strong>低消耗素材</strong>：花费 &lt; $10</li>
+          <li><strong>老素材 建议停投 P3</strong>：老素材、花费 &gt; $50、ROI &lt; 平均 ROI，且 ROI 环比下跌</li>
+          <li><strong>常规观察</strong>：未命中以上规则</li>
+        </ul>
+      </div>
       <div id="productSelectorBlock">
     <div class="product-tools">
       <label for="productPicker">选择产品</label>
@@ -3375,6 +3401,8 @@
     });
     const heading = document.getElementById('activeAdTypeHeading');
     if (heading) heading.textContent = `${activeOverviewKind === 'exposure' ? '合创曝光' : '合创转化'} · 基础数据`;
+    const recommendationRulesNote = document.getElementById('recommendationRulesNote');
+    if (recommendationRulesNote) recommendationRulesNote.hidden = activeOverviewKind !== 'conversion';
   }
 
   function activateAdTypeTab(kind) {
