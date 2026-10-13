@@ -2661,6 +2661,12 @@
   const refreshStatus = document.getElementById('refreshStatus');
   const updateTimeNode = document.querySelector('.update-time');
   const periodSummaryNode = document.querySelector('header > p');
+  const REFRESH_CACHE_VERSION = 1;
+  const REFRESH_CACHE_NAME = 'hechuang-dashboard-refresh-v1';
+  const REFRESH_CACHE_KEY = 'hechuang-dashboard-refresh-v1';
+  const REFRESH_CACHE_URL = window.location.origin && window.location.origin !== 'null'
+    ? window.location.origin + '/__hechuang_cache__/latest.json'
+    : '';
 
   function setRefreshStatus(state) {
     if (!refreshStatus) return;
@@ -2673,6 +2679,81 @@
     refreshStatus.className = 'refresh-status ' + config.cls;
     const textNode = refreshStatus.querySelector('.refresh-status-text');
     if (textNode) textNode.textContent = config.text;
+  }
+
+  function localDayKey(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function formatRefreshStamp(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+  }
+
+  function isValidCachedRefresh(snapshot) {
+    return Boolean(
+      snapshot &&
+      snapshot.version === REFRESH_CACHE_VERSION &&
+      snapshot.usdToCnyRate === USD_TO_CNY_RATE &&
+      snapshot.refreshedAt &&
+      Array.isArray(snapshot.queryRows) && snapshot.queryRows.length &&
+      Array.isArray(snapshot.compareRows) && snapshot.compareRows.length &&
+      validPeriod(snapshot.queryPeriod) &&
+      validPeriod(snapshot.comparePeriod)
+    );
+  }
+
+  function isCachedRefreshToday(snapshot) {
+    return isValidCachedRefresh(snapshot) && localDayKey(snapshot.refreshedAt) === localDayKey(new Date());
+  }
+
+  async function readCachedRefresh() {
+    let snapshot = null;
+    if (REFRESH_CACHE_URL && 'caches' in window) {
+      try {
+        const cache = await caches.open(REFRESH_CACHE_NAME);
+        const response = await cache.match(REFRESH_CACHE_URL);
+        if (response) snapshot = await response.json();
+      } catch (err) {
+        console.warn('读取看板缓存失败', err);
+      }
+    }
+    if (!snapshot) {
+      try {
+        const stored = window.localStorage.getItem(REFRESH_CACHE_KEY);
+        if (stored) snapshot = JSON.parse(stored);
+      } catch (err) {
+        console.warn('读取本地看板缓存失败', err);
+      }
+    }
+    return isValidCachedRefresh(snapshot) ? snapshot : null;
+  }
+
+  async function writeCachedRefresh(snapshot) {
+    const serialized = JSON.stringify(snapshot);
+    let stored = false;
+    if (REFRESH_CACHE_URL && 'caches' in window) {
+      try {
+        const cache = await caches.open(REFRESH_CACHE_NAME);
+        const response = new Response(serialized, { headers: { 'Content-Type': 'application/json' } });
+        await cache.put(REFRESH_CACHE_URL, response);
+        stored = true;
+      } catch (err) {
+        console.warn('保存看板缓存失败', err);
+      }
+    }
+    if (!stored) {
+      try {
+        window.localStorage.setItem(REFRESH_CACHE_KEY, serialized);
+        stored = true;
+      } catch (err) {
+        console.warn('保存本地看板缓存失败', err);
+      }
+    }
+    return stored;
   }
 
   function normalizeText(value) {
@@ -2897,6 +2978,33 @@
     });
   }
 
+  function applyCachedRefresh(snapshot) {
+    if (!isValidCachedRefresh(snapshot)) return null;
+    embedded.queryRaw = snapshot.queryRows;
+    embedded.compareRaw = snapshot.compareRows;
+    embedded.queryPeriod = snapshot.queryPeriod;
+    embedded.comparePeriod = snapshot.comparePeriod;
+    embedded.cpmMedian = Number(snapshot.cpmMedian || 0);
+    fixedNewMaterialIds.clear();
+    (snapshot.newMaterialIds || []).forEach(id => fixedNewMaterialIds.add(String(id)));
+    embedded.newMaterialIds = Array.from(fixedNewMaterialIds);
+    document.getElementById('qStart').value = snapshot.queryPeriod.start;
+    document.getElementById('qEnd').value = snapshot.queryPeriod.end;
+    document.getElementById('cStart').value = snapshot.comparePeriod.start;
+    document.getElementById('cEnd').value = snapshot.comparePeriod.end;
+    updatePeriodSummary({ query: snapshot.queryPeriod, compare: snapshot.comparePeriod });
+    refreshAllBoards(snapshot.queryRows, snapshot.compareRows);
+    const stamp = formatRefreshStamp(snapshot.refreshedAt);
+    if (updateTimeNode && stamp) updateTimeNode.textContent = '最近更新：' + stamp;
+    setRefreshStatus('success');
+    return snapshot;
+  }
+
+  async function restoreCachedRefresh() {
+    const snapshot = await readCachedRefresh();
+    return snapshot ? applyCachedRefresh(snapshot) : null;
+  }
+
   async function refreshFromGoogleSheet(periodsOverride = null, options = {}) {
     if (!refreshBtn) return;
     refreshBtn.disabled = true;
@@ -2923,8 +3031,20 @@
       updatePeriodSummary(periods);
       refreshAllBoards(queryRows, compareRows);
       const now = new Date();
-      const stamp = `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+      const stamp = formatRefreshStamp(now);
       if (updateTimeNode) updateTimeNode.textContent = '最近更新：' + stamp;
+      embedded.newMaterialIds = Array.from(fixedNewMaterialIds);
+      await writeCachedRefresh({
+        version: REFRESH_CACHE_VERSION,
+        usdToCnyRate: USD_TO_CNY_RATE,
+        refreshedAt: now.toISOString(),
+        queryPeriod: { ...periods.query },
+        comparePeriod: { ...periods.compare },
+        queryRows,
+        compareRows,
+        cpmMedian: embedded.cpmMedian,
+        newMaterialIds: embedded.newMaterialIds,
+      });
       setRefreshStatus('success');
     } catch (err) {
       console.error(err);
@@ -2943,10 +3063,13 @@
   }
   applyDefaultPeriodsToInputs();
   window.refreshFromGoogleSheet = refreshFromGoogleSheet;
-  const autoRefreshOnPageLoad = () => {
+  const cachedRefreshPromise = restoreCachedRefresh();
+  const autoRefreshOnPageLoad = async () => {
     if (window.__hechuangAutoRefreshStarted) return;
     window.__hechuangAutoRefreshStarted = true;
-    refreshFromGoogleSheet(null, { silent: true });
+    const cachedSnapshot = await cachedRefreshPromise;
+    if (isCachedRefreshToday(cachedSnapshot)) return;
+    await refreshFromGoogleSheet(null, { silent: true });
   };
   if (document.readyState === 'complete') {
     window.setTimeout(autoRefreshOnPageLoad, 0);
