@@ -642,20 +642,49 @@
       justify-content: flex-start;
     }
 
-    .overview-chip {
+    .ad-type-tabs {
+      display: flex;
+      gap: 4px;
+      width: fit-content;
+      margin: 20px 0 18px;
+      padding: 4px;
       border: 1px solid var(--line);
-      background: #f5fbfd;
-      color: var(--ink);
-      border-radius: 999px;
-      padding: 8px 16px;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
+      border-radius: 8px;
+      background: #eef5f7;
     }
-    .active-overview-row .overview-chip {
-      background: var(--brand);
-      color: #fff;
-      border-color: var(--brand);
+    .ad-type-tab {
+      min-width: 132px;
+      height: 40px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+    }
+    .ad-type-tab:hover { color: var(--ink); }
+    .ad-type-tab.active {
+      background: #fff;
+      color: var(--brand);
+      box-shadow: 0 1px 4px rgba(31, 65, 81, 0.14);
+    }
+    .ad-type-tab:focus-visible {
+      outline: 3px solid rgba(24, 119, 147, 0.2);
+      outline-offset: 2px;
+    }
+    .overview-label {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      font-weight: 800;
+      color: var(--brand);
+      white-space: nowrap;
+    }
+    #hechuangOverviewTable table {
+      min-width: 1120px;
     }
     .linked-filter-row {
       cursor: default;
@@ -785,14 +814,18 @@
       <div class="controls-filter-panel" id="activeFilterSummary"></div>
     </div>
   
+    <nav class="ad-type-tabs" role="tablist" aria-label="合创数据类型">
+      <button id="adTypeConversionTab" class="ad-type-tab active" type="button" role="tab" aria-selected="true" aria-controls="dashboardContent" data-ad-type-tab="conversion">合创转化</button>
+      <button id="adTypeExposureTab" class="ad-type-tab" type="button" role="tab" aria-selected="false" aria-controls="dashboardContent" data-ad-type-tab="exposure">合创曝光</button>
+    </nav>
     <section id="hechuangOverviewSection">
-      <h2>合创基础数据</h2>
-      <p class="small">仅展示合创转化与合创曝光两行，点击可触发全局广告类型联动。</p>
+      <h2 id="activeAdTypeHeading">合创转化 · 基础数据</h2>
+      <p class="small">当前看板仅统计所选广告类型；两个 Tab 的筛选条件会分别保留。</p>
       <div class="table-wrap" id="hechuangOverviewTable"></div>
     </section>
     
   </header>
-  <main>
+  <main id="dashboardContent">
     <section id="compareSection">
       <h2>环比变化看板</h2>
       <p class="small">点击上方指标卡可多选联动，趋势图会同时展示所选指标的本期实线与环比虚线走势。系统类型和平台的明细变化保留在下方表格中。</p>
@@ -1819,6 +1852,8 @@
       return `<div class="multi-select ${selected.length ? 'has-value' : ''}" data-multi-select="${id}"><div class="multi-select-trigger" data-trigger="${id}" aria-label="${label}"><input type="text" class="multi-select-inline-input" data-inline-search="${id}" placeholder="${escapeHtml(inputPlaceholder)}" value="">${clearHtml}</div><div class="multi-select-panel"><div class="multi-select-options">${optionsHtml}</div></div></div>`;
     }
     function productSelectorHtml(productRows, materials, rawRows, compareRawRows, averageRoi, availableProducts, availableCategories) {
+      const isConversionTab = window.__activeAdTypeTab !== 'exposure';
+      const materialColumns = isConversionTab ? topColumns : topColumns.filter(([key]) => key !== 'action');
       const head = `
         <div class="product-list-head">
           <span>产品</span>
@@ -1837,7 +1872,10 @@
       const details = productRows.map(summary => {
         const productRawRows = rawRows.filter(row => (row.product || row.material_product || '-') === summary.product);
         const productCompareRawRows = compareRawRows.filter(row => (row.product || row.material_product || '-') === summary.product);
-        const rows = applyMaterialRecommendations(materialRows(productRawRows), materialRows(productCompareRawRows), averageRoi)
+        const productMaterials = materialRows(productRawRows);
+        const rows = (isConversionTab
+          ? applyMaterialRecommendations(productMaterials, materialRows(productCompareRawRows), averageRoi)
+          : productMaterials)
           .filter(row => {
             const username = String(row.username || '').trim();
             return username && username !== '-';
@@ -1860,7 +1898,7 @@
               <span class="product-num">${fmtInt(summary.impressions)}</span>
             </div>
           </summary>
-          <div class="table-wrap">${tableHtml(rows, topColumns, null, { showMaterialCount: true })}</div>
+          <div class="table-wrap">${tableHtml(rows, materialColumns, null, { showMaterialCount: true })}</div>
         </details>`;
       }).join('');
       return `<div class="product-tools"><label>品类筛选</label>${multiSelectHtml('productCategoryFilter', '品类', availableCategories, activeProductCategorySelections, '搜索选择品类')}<label>产品筛选</label>${multiSelectHtml('productPicker', '产品', availableProducts, activeProductSelections, '搜索选择产品')}<label for="productPostIdFilter">帖子编号（多值）</label><textarea id="productPostIdFilter" rows="2" spellcheck="false" placeholder="粘贴多个帖子编号">${escapeHtml(activeProductPostIdFilter)}</textarea><button type="button" class="collapse-all-btn" id="collapseProductDetails">一键收起</button></div><div class="product-list-board">${head}<div id="productDetails">${details}</div></div>`;
@@ -1977,9 +2015,11 @@
       const productBoardFiltered = filterProductBoardRows(materials, qRows);
       const productBoardCompareFiltered = filterProductBoardRows(compareMaterials, cRows);
       const averageRoi = div(sum(productBoardFiltered.scopedMaterials, 'gmv'), sum(productBoardFiltered.scopedMaterials, 'spend'));
-      const recommendedMaterials = applyMaterialRecommendations(productBoardFiltered.scopedMaterials, productBoardCompareFiltered.scopedMaterials, averageRoi);
-      const productRows = productSummaryRows(recommendedMaterials, productBoardFiltered.scopedRawRows, materialPublishPeriod());
-      document.getElementById('productSelectorBlock').innerHTML = productSelectorHtml(productRows, recommendedMaterials, productBoardFiltered.scopedRawRows, productBoardCompareFiltered.scopedRawRows, averageRoi, productOptions(qRows), categoryOptions(qRows));
+      const displayMaterials = window.__activeAdTypeTab === 'exposure'
+        ? productBoardFiltered.scopedMaterials
+        : applyMaterialRecommendations(productBoardFiltered.scopedMaterials, productBoardCompareFiltered.scopedMaterials, averageRoi);
+      const productRows = productSummaryRows(displayMaterials, productBoardFiltered.scopedRawRows, materialPublishPeriod());
+      document.getElementById('productSelectorBlock').innerHTML = productSelectorHtml(productRows, displayMaterials, productBoardFiltered.scopedRawRows, productBoardCompareFiltered.scopedRawRows, averageRoi, productOptions(qRows), categoryOptions(qRows));
       bindProductPicker();
       const postIdInput = document.getElementById('productPostIdFilter');
       if (postIdInput) postIdInput.value = activeProductPostIdFilter;
@@ -3267,10 +3307,25 @@
 
 <script>
 (function () {
-  let activeOverviewKind = 'all';
+  let activeOverviewKind = 'conversion';
   let activeCompareSystemType = 'all';
   let activeComparePlatform = 'all';
   let activeCompareProducts = [];
+  const emptyAdTypeTabState = () => ({
+    systemType: 'all',
+    platform: 'all',
+    compareProducts: [],
+    products: [],
+    categories: [],
+    postId: '',
+    materialPublishStart: '',
+    materialPublishEnd: '',
+  });
+  const adTypeTabStates = {
+    conversion: emptyAdTypeTabState(),
+    exposure: emptyAdTypeTabState(),
+  };
+  window.__activeAdTypeTab = activeOverviewKind;
   window.__activeCompareSystemType = activeCompareSystemType;
   window.__activeComparePlatform = activeComparePlatform;
   window.__activeCompareProducts = activeCompareProducts;
@@ -3321,6 +3376,59 @@
     if (kind === 'conversion') return rows.filter(row => normalizeText(row.ad_form2) === '收割广告');
     if (kind === 'exposure') return rows.filter(row => normalizeText(row.ad_form2) === '种草广告');
     return rows;
+  }
+
+  function captureAdTypeTabState() {
+    return {
+      systemType: activeCompareSystemType,
+      platform: activeComparePlatform,
+      compareProducts: activeCompareProducts.slice(),
+      products: (window.__activeProductSelections || []).slice(),
+      categories: (window.__activeProductCategorySelections || []).slice(),
+      postId: normalizeText(window.__activeProductPostIdFilter),
+      materialPublishStart: normalizeText(window.__activeMaterialPublishStart),
+      materialPublishEnd: normalizeText(window.__activeMaterialPublishEnd),
+    };
+  }
+
+  function restoreAdTypeTabState(state) {
+    const next = state || emptyAdTypeTabState();
+    activeCompareSystemType = next.systemType || 'all';
+    activeComparePlatform = next.platform || 'all';
+    activeCompareProducts = Array.isArray(next.compareProducts) ? next.compareProducts.slice() : [];
+    window.__activeCompareSystemType = activeCompareSystemType;
+    window.__activeComparePlatform = activeComparePlatform;
+    window.__activeCompareProducts = activeCompareProducts;
+    if (typeof window.__setProductListFilterState === 'function') {
+      window.__setProductListFilterState({
+        products: Array.isArray(next.products) ? next.products : [],
+        categories: Array.isArray(next.categories) ? next.categories : [],
+        postId: next.postId || '',
+        materialPublishStart: next.materialPublishStart || '',
+        materialPublishEnd: next.materialPublishEnd || '',
+      });
+    }
+  }
+
+  function syncAdTypeTabs() {
+    document.querySelectorAll('[data-ad-type-tab]').forEach(tab => {
+      const isActive = tab.dataset.adTypeTab === activeOverviewKind;
+      tab.classList.toggle('active', isActive);
+      tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      tab.tabIndex = isActive ? 0 : -1;
+    });
+    const heading = document.getElementById('activeAdTypeHeading');
+    if (heading) heading.textContent = `${activeOverviewKind === 'exposure' ? '合创曝光' : '合创转化'} · 基础数据`;
+  }
+
+  function activateAdTypeTab(kind) {
+    if (!['conversion', 'exposure'].includes(kind) || kind === activeOverviewKind) return;
+    adTypeTabStates[activeOverviewKind] = captureAdTypeTabState();
+    activeOverviewKind = kind;
+    window.__activeAdTypeTab = kind;
+    restoreAdTypeTabState(adTypeTabStates[kind]);
+    syncAdTypeTabs();
+    rerenderLinkedBoards();
   }
 
   function rowsBySystemType(rows, systemType) {
@@ -3383,8 +3491,6 @@
   function renderActiveFilterSummary() {
     if (!activeFilterSummary) return;
     const chips = [];
-    if (activeOverviewKind === 'conversion') chips.push(filterChip('广告类型', '合创转化', 'overview'));
-    if (activeOverviewKind === 'exposure') chips.push(filterChip('广告类型', '合创曝光', 'overview'));
     if (activeCompareSystemType !== 'all') chips.push(filterChip('系统类型', activeCompareSystemType, 'system_type'));
     if (activeComparePlatform !== 'all') chips.push(filterChip('平台', activeComparePlatform, 'platform'));
     activeCompareProducts.forEach(product => chips.push(filterChip('产品', product, 'product:' + product)));
@@ -3399,7 +3505,6 @@
       btn.addEventListener('click', event => {
         event.stopPropagation();
         const key = btn.dataset.clearFilter || '';
-        if (key === 'overview') activeOverviewKind = 'all';
         if (key === 'system_type') {
           activeCompareSystemType = 'all';
           window.__activeCompareSystemType = activeCompareSystemType;
@@ -3432,7 +3537,6 @@
     const clearAllBtn = document.getElementById('clearAllFilters');
     if (clearAllBtn) {
       clearAllBtn.addEventListener('click', () => {
-        activeOverviewKind = 'all';
         activeCompareSystemType = 'all';
         activeComparePlatform = 'all';
         activeCompareProducts = [];
@@ -3526,17 +3630,13 @@
   function renderOverviewTable(sourceRows, compareSourceRows) {
     const wrap = document.getElementById('hechuangOverviewTable');
     if (!wrap) return;
+    syncAdTypeTabs();
     const queryPeriod = embedded.queryPeriod || { start: '', end: '' };
     const comparePeriod = embedded.comparePeriod || { start: '', end: '' };
-    const rows = [
-      { label: '合创转化', kind: 'conversion', ...metricPack(rowsByOverviewKind(sourceRows, 'conversion'), queryPeriod) },
-      { label: '合创曝光', kind: 'exposure', ...metricPack(rowsByOverviewKind(sourceRows, 'exposure'), queryPeriod) },
-    ];
+    const label = activeOverviewKind === 'exposure' ? '合创曝光' : '合创转化';
+    const rows = [{ label, kind: activeOverviewKind, ...metricPack(rowsByOverviewKind(sourceRows, activeOverviewKind), queryPeriod) }];
     const compareRowsSource = compareSourceRows || [];
-    const compareRows = [
-      { label: '合创转化', kind: 'conversion', ...metricPack(rowsByOverviewKind(compareRowsSource, 'conversion'), comparePeriod) },
-      { label: '合创曝光', kind: 'exposure', ...metricPack(rowsByOverviewKind(compareRowsSource, 'exposure'), comparePeriod) },
-    ];
+    const compareRows = [{ label, kind: activeOverviewKind, ...metricPack(rowsByOverviewKind(compareRowsSource, activeOverviewKind), comparePeriod) }];
     const compareMap = new Map(compareRows.map(row => [row.kind, row]));
     const displayRows = rows.map(row => ({ ...row, __compare: compareMap.get(row.kind) || null }));
     wrap.innerHTML = `
@@ -3556,8 +3656,8 @@
         </tr></thead>
         <tbody>
           ${displayRows.map(row => `
-            <tr class="${activeOverviewKind === row.kind ? 'active-overview-row' : ''}">
-              <td><button type="button" class="overview-chip" data-overview-kind="${row.kind}">${row.label}</button></td>
+            <tr>
+              <td><span class="overview-label">${row.label}</span></td>
               <td class="num">${cellWithCompare(row, 'spend')}</td>
               <td class="num">${cellWithCompare(row, 'roi')}</td>
               <td class="num">${cellWithCompare(row, 'cpm')}</td>
@@ -3573,13 +3673,6 @@
         </tbody>
       </table>
     `;
-    wrap.querySelectorAll('[data-overview-kind]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const kind = btn.dataset.overviewKind || 'all';
-        activeOverviewKind = activeOverviewKind === kind ? 'all' : kind;
-        rerenderLinkedBoards();
-      });
-    });
   }
 
   function bindCompareTableLinkage(containerId, key, activeValue) {
@@ -3645,6 +3738,17 @@
   }
 
   patchGlobalRefresh();
+  document.querySelectorAll('[data-ad-type-tab]').forEach(tab => {
+    tab.addEventListener('click', () => activateAdTypeTab(tab.dataset.adTypeTab || 'conversion'));
+    tab.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const nextKind = activeOverviewKind === 'conversion' ? 'exposure' : 'conversion';
+      activateAdTypeTab(nextKind);
+      document.querySelector(`[data-ad-type-tab="${nextKind}"]`)?.focus();
+    });
+  });
+  syncAdTypeTabs();
   if (typeof window.refreshAllBoards === 'function') {
     window.refreshAllBoards(embedded.queryRaw || [], embedded.compareRaw || []);
   }

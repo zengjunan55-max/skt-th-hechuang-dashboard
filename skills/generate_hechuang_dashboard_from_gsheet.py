@@ -1501,6 +1501,291 @@ def enhance_html_with_material_recommendations(html_text: str) -> str:
     return html_text
 
 
+def enhance_html_with_ad_type_tabs(html_text: str) -> str:
+    def replace_once(old: str, new: str, label: str) -> None:
+        nonlocal html_text
+        if old not in html_text:
+            raise ValueError(f"Ad type tabs patch target not found: {label}")
+        html_text = html_text.replace(old, new, 1)
+
+    replace_once(
+        """    .overview-chip {
+      border: 1px solid var(--line);
+      background: #f5fbfd;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 8px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .active-overview-row .overview-chip {
+      background: var(--brand);
+      color: #fff;
+      border-color: var(--brand);
+    }""",
+        """    .ad-type-tabs {
+      display: flex;
+      gap: 4px;
+      width: fit-content;
+      margin: 20px 0 18px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #eef5f7;
+    }
+    .ad-type-tab {
+      min-width: 132px;
+      height: 40px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+    }
+    .ad-type-tab:hover { color: var(--ink); }
+    .ad-type-tab.active {
+      background: #fff;
+      color: var(--brand);
+      box-shadow: 0 1px 4px rgba(31, 65, 81, 0.14);
+    }
+    .ad-type-tab:focus-visible {
+      outline: 3px solid rgba(24, 119, 147, 0.2);
+      outline-offset: 2px;
+    }
+    .overview-label {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      font-weight: 800;
+      color: var(--brand);
+      white-space: nowrap;
+    }
+    #hechuangOverviewTable table {
+      min-width: 1120px;
+    }""",
+        "tab styles",
+    )
+    replace_once(
+        """    <section id="hechuangOverviewSection">
+      <h2>合创基础数据</h2>
+      <p class="small">仅展示合创转化与合创曝光两行，点击可触发全局广告类型联动。</p>""",
+        """    <nav class="ad-type-tabs" role="tablist" aria-label="合创数据类型">
+      <button id="adTypeConversionTab" class="ad-type-tab active" type="button" role="tab" aria-selected="true" aria-controls="dashboardContent" data-ad-type-tab="conversion">合创转化</button>
+      <button id="adTypeExposureTab" class="ad-type-tab" type="button" role="tab" aria-selected="false" aria-controls="dashboardContent" data-ad-type-tab="exposure">合创曝光</button>
+    </nav>
+    <section id="hechuangOverviewSection">
+      <h2 id="activeAdTypeHeading">合创转化 · 基础数据</h2>
+      <p class="small">当前看板仅统计所选广告类型；两个 Tab 的筛选条件会分别保留。</p>""",
+        "tab markup",
+    )
+    replace_once("  <main>", "  <main id=\"dashboardContent\">", "dashboard main id")
+    replace_once(
+        """    function productSelectorHtml(productRows, materials, rawRows, compareRawRows, averageRoi, availableProducts, availableCategories) {
+      const head = `""",
+        """    function productSelectorHtml(productRows, materials, rawRows, compareRawRows, averageRoi, availableProducts, availableCategories) {
+      const isConversionTab = window.__activeAdTypeTab !== 'exposure';
+      const materialColumns = isConversionTab ? topColumns : topColumns.filter(([key]) => key !== 'action');
+      const head = `""",
+        "material columns",
+    )
+    replace_once(
+        """        const productCompareRawRows = compareRawRows.filter(row => (row.product || row.material_product || '-') === summary.product);
+        const rows = applyMaterialRecommendations(materialRows(productRawRows), materialRows(productCompareRawRows), averageRoi)
+          .filter(row => {""",
+        """        const productCompareRawRows = compareRawRows.filter(row => (row.product || row.material_product || '-') === summary.product);
+        const productMaterials = materialRows(productRawRows);
+        const rows = (isConversionTab
+          ? applyMaterialRecommendations(productMaterials, materialRows(productCompareRawRows), averageRoi)
+          : productMaterials)
+          .filter(row => {""",
+        "conditional recommendations",
+    )
+    replace_once(
+        "${tableHtml(rows, topColumns, null, { showMaterialCount: true })}",
+        "${tableHtml(rows, materialColumns, null, { showMaterialCount: true })}",
+        "exposure detail columns",
+    )
+    replace_once(
+        """      const recommendedMaterials = applyMaterialRecommendations(productBoardFiltered.scopedMaterials, productBoardCompareFiltered.scopedMaterials, averageRoi);
+      const productRows = productSummaryRows(recommendedMaterials, productBoardFiltered.scopedRawRows, materialPublishPeriod());
+      document.getElementById('productSelectorBlock').innerHTML = productSelectorHtml(productRows, recommendedMaterials, productBoardFiltered.scopedRawRows, productBoardCompareFiltered.scopedRawRows, averageRoi, productOptions(qRows), categoryOptions(qRows));""",
+        """      const displayMaterials = window.__activeAdTypeTab === 'exposure'
+        ? productBoardFiltered.scopedMaterials
+        : applyMaterialRecommendations(productBoardFiltered.scopedMaterials, productBoardCompareFiltered.scopedMaterials, averageRoi);
+      const productRows = productSummaryRows(displayMaterials, productBoardFiltered.scopedRawRows, materialPublishPeriod());
+      document.getElementById('productSelectorBlock').innerHTML = productSelectorHtml(productRows, displayMaterials, productBoardFiltered.scopedRawRows, productBoardCompareFiltered.scopedRawRows, averageRoi, productOptions(qRows), categoryOptions(qRows));""",
+        "conditional material analysis",
+    )
+    replace_once(
+        """  let activeOverviewKind = 'all';
+  let activeCompareSystemType = 'all';
+  let activeComparePlatform = 'all';
+  let activeCompareProducts = [];
+  window.__activeCompareSystemType = activeCompareSystemType;""",
+        """  let activeOverviewKind = 'conversion';
+  let activeCompareSystemType = 'all';
+  let activeComparePlatform = 'all';
+  let activeCompareProducts = [];
+  const emptyAdTypeTabState = () => ({
+    systemType: 'all',
+    platform: 'all',
+    compareProducts: [],
+    products: [],
+    categories: [],
+    postId: '',
+    materialPublishStart: '',
+    materialPublishEnd: '',
+  });
+  const adTypeTabStates = {
+    conversion: emptyAdTypeTabState(),
+    exposure: emptyAdTypeTabState(),
+  };
+  window.__activeAdTypeTab = activeOverviewKind;
+  window.__activeCompareSystemType = activeCompareSystemType;""",
+        "tab state",
+    )
+    replace_once(
+        """  function rowsByOverviewKind(rows, kind) {
+    if (kind === 'conversion') return rows.filter(row => normalizeText(row.ad_form2) === '收割广告');
+    if (kind === 'exposure') return rows.filter(row => normalizeText(row.ad_form2) === '种草广告');
+    return rows;
+  }
+
+  function rowsBySystemType""",
+        """  function rowsByOverviewKind(rows, kind) {
+    if (kind === 'conversion') return rows.filter(row => normalizeText(row.ad_form2) === '收割广告');
+    if (kind === 'exposure') return rows.filter(row => normalizeText(row.ad_form2) === '种草广告');
+    return rows;
+  }
+
+  function captureAdTypeTabState() {
+    return {
+      systemType: activeCompareSystemType,
+      platform: activeComparePlatform,
+      compareProducts: activeCompareProducts.slice(),
+      products: (window.__activeProductSelections || []).slice(),
+      categories: (window.__activeProductCategorySelections || []).slice(),
+      postId: normalizeText(window.__activeProductPostIdFilter),
+      materialPublishStart: normalizeText(window.__activeMaterialPublishStart),
+      materialPublishEnd: normalizeText(window.__activeMaterialPublishEnd),
+    };
+  }
+
+  function restoreAdTypeTabState(state) {
+    const next = state || emptyAdTypeTabState();
+    activeCompareSystemType = next.systemType || 'all';
+    activeComparePlatform = next.platform || 'all';
+    activeCompareProducts = Array.isArray(next.compareProducts) ? next.compareProducts.slice() : [];
+    window.__activeCompareSystemType = activeCompareSystemType;
+    window.__activeComparePlatform = activeComparePlatform;
+    window.__activeCompareProducts = activeCompareProducts;
+    if (typeof window.__setProductListFilterState === 'function') {
+      window.__setProductListFilterState({
+        products: Array.isArray(next.products) ? next.products : [],
+        categories: Array.isArray(next.categories) ? next.categories : [],
+        postId: next.postId || '',
+        materialPublishStart: next.materialPublishStart || '',
+        materialPublishEnd: next.materialPublishEnd || '',
+      });
+    }
+  }
+
+  function syncAdTypeTabs() {
+    document.querySelectorAll('[data-ad-type-tab]').forEach(tab => {
+      const isActive = tab.dataset.adTypeTab === activeOverviewKind;
+      tab.classList.toggle('active', isActive);
+      tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      tab.tabIndex = isActive ? 0 : -1;
+    });
+    const heading = document.getElementById('activeAdTypeHeading');
+    if (heading) heading.textContent = `${activeOverviewKind === 'exposure' ? '合创曝光' : '合创转化'} · 基础数据`;
+  }
+
+  function activateAdTypeTab(kind) {
+    if (!['conversion', 'exposure'].includes(kind) || kind === activeOverviewKind) return;
+    adTypeTabStates[activeOverviewKind] = captureAdTypeTabState();
+    activeOverviewKind = kind;
+    window.__activeAdTypeTab = kind;
+    restoreAdTypeTabState(adTypeTabStates[kind]);
+    syncAdTypeTabs();
+    rerenderLinkedBoards();
+  }
+
+  function rowsBySystemType""",
+        "tab state helpers",
+    )
+    replace_once("    if (activeOverviewKind === 'conversion') chips.push(filterChip('广告类型', '合创转化', 'overview'));\n", "", "conversion filter chip")
+    replace_once("    if (activeOverviewKind === 'exposure') chips.push(filterChip('广告类型', '合创曝光', 'overview'));\n", "", "exposure filter chip")
+    replace_once("        if (key === 'overview') activeOverviewKind = 'all';\n", "", "clear tab filter")
+    replace_once("        activeOverviewKind = 'all';\n", "", "clear all tab filter")
+    replace_once(
+        """    if (!wrap) return;
+    const queryPeriod = embedded.queryPeriod || { start: '', end: '' };
+    const comparePeriod = embedded.comparePeriod || { start: '', end: '' };
+    const rows = [
+      { label: '合创转化', kind: 'conversion', ...metricPack(rowsByOverviewKind(sourceRows, 'conversion'), queryPeriod) },
+      { label: '合创曝光', kind: 'exposure', ...metricPack(rowsByOverviewKind(sourceRows, 'exposure'), queryPeriod) },
+    ];
+    const compareRowsSource = compareSourceRows || [];
+    const compareRows = [
+      { label: '合创转化', kind: 'conversion', ...metricPack(rowsByOverviewKind(compareRowsSource, 'conversion'), comparePeriod) },
+      { label: '合创曝光', kind: 'exposure', ...metricPack(rowsByOverviewKind(compareRowsSource, 'exposure'), comparePeriod) },
+    ];""",
+        """    if (!wrap) return;
+    syncAdTypeTabs();
+    const queryPeriod = embedded.queryPeriod || { start: '', end: '' };
+    const comparePeriod = embedded.comparePeriod || { start: '', end: '' };
+    const label = activeOverviewKind === 'exposure' ? '合创曝光' : '合创转化';
+    const rows = [{ label, kind: activeOverviewKind, ...metricPack(rowsByOverviewKind(sourceRows, activeOverviewKind), queryPeriod) }];
+    const compareRowsSource = compareSourceRows || [];
+    const compareRows = [{ label, kind: activeOverviewKind, ...metricPack(rowsByOverviewKind(compareRowsSource, activeOverviewKind), comparePeriod) }];""",
+        "active overview row",
+    )
+    replace_once(
+        """            <tr class="${activeOverviewKind === row.kind ? 'active-overview-row' : ''}">
+              <td><button type="button" class="overview-chip" data-overview-kind="${row.kind}">${row.label}</button></td>""",
+        """            <tr>
+              <td><span class="overview-label">${row.label}</span></td>""",
+        "overview row label",
+    )
+    replace_once(
+        """    wrap.querySelectorAll('[data-overview-kind]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const kind = btn.dataset.overviewKind || 'all';
+        activeOverviewKind = activeOverviewKind === kind ? 'all' : kind;
+        rerenderLinkedBoards();
+      });
+    });
+""",
+        "",
+        "old overview click binding",
+    )
+    replace_once(
+        """  patchGlobalRefresh();
+  if (typeof window.refreshAllBoards === 'function') {""",
+        """  patchGlobalRefresh();
+  document.querySelectorAll('[data-ad-type-tab]').forEach(tab => {
+    tab.addEventListener('click', () => activateAdTypeTab(tab.dataset.adTypeTab || 'conversion'));
+    tab.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const nextKind = activeOverviewKind === 'conversion' ? 'exposure' : 'conversion';
+      activateAdTypeTab(nextKind);
+      document.querySelector(`[data-ad-type-tab="${nextKind}"]`)?.focus();
+    });
+  });
+  syncAdTypeTabs();
+  if (typeof window.refreshAllBoards === 'function') {""",
+        "tab event binding",
+    )
+    return html_text
+
+
 def enhance_html_with_trend_scaling(html_text: str) -> str:
     toolbar_css = """
     .trend-toolbar {
@@ -2129,6 +2414,7 @@ def main() -> None:
     html_text = enhance_html_with_system_paid_materials_compare(html_text)
     html_text = enhance_html_with_batch_post_id_filter(html_text)
     html_text = enhance_html_with_material_recommendations(html_text)
+    html_text = enhance_html_with_ad_type_tabs(html_text)
     html_text = enhance_html_with_trend_scaling(html_text)
     html_text = enhance_html_with_interaction_polish(html_text)
     OUTPUT_PATH.write_text(html_text, encoding="utf-8")
