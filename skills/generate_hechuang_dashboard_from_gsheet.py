@@ -388,7 +388,9 @@ def enhance_html_for_live_refresh(html_text: str) -> str:
     }} catch (err) {{
       console.error(err);
       setRefreshStatus('error');
-      alert('绔嬪嵆鍒锋柊澶辫触锛? + (err && err.message ? err.message : err));
+      if (!options.silent) {{
+        alert('绔嬪嵆鍒锋柊澶辫触锛? + (err && err.message ? err.message : err));
+      }}
     }} finally {{
       refreshBtn.disabled = false;
     }}
@@ -400,6 +402,16 @@ def enhance_html_for_live_refresh(html_text: str) -> str:
   }}
   applyDefaultPeriodsToInputs();
   window.refreshFromGoogleSheet = refreshFromGoogleSheet;
+  const autoRefreshOnPageLoad = () => {{
+    if (window.__hechuangAutoRefreshStarted) return;
+    window.__hechuangAutoRefreshStarted = true;
+    refreshFromGoogleSheet(null, {{ silent: true }});
+  }};
+  if (document.readyState === 'complete') {{
+    window.setTimeout(autoRefreshOnPageLoad, 0);
+  }} else {{
+    window.addEventListener('load', autoRefreshOnPageLoad, {{ once: true }});
+  }}
 }})();
 </script>
 """
