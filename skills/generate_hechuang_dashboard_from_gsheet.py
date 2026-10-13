@@ -1392,6 +1392,115 @@ def enhance_html_with_batch_post_id_filter(html_text: str) -> str:
     return html_text
 
 
+def enhance_html_with_material_recommendations(html_text: str) -> str:
+    replacements = [
+        (
+            '    details.product-detail .table-wrap { border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0; }',
+            '''    details.product-detail .table-wrap { border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0; }
+    .material-count-cell {
+      padding: 11px 14px;
+      background: #f2f5f8;
+      color: #354152;
+      font-weight: 700;
+      text-align: left;
+      border-top: 1px solid #dfe5ec;
+    }''',
+        ),
+        (
+            '''      addScores(list);
+      return list.sort((a, b) => b.score - a.score);
+    }
+    function percentileScores(list, metric, high = true) {''',
+            '''      addScores(list);
+      return list.sort((a, b) => b.score - a.score);
+    }
+    function materialRecommendation(row, averageRoi, compareMap) {
+      const spend = Number(row.spend || 0);
+      const roi = Number(row.roi || 0);
+      const compare = compareMap.get(String(row.material_id || ''));
+      const compareRoi = compare ? Number(compare.roi || 0) : null;
+      if (spend > 30 * USD_TO_CNY_RATE && roi > averageRoi * 1.5) return '潜力素材 P0';
+      if (spend > 20 * USD_TO_CNY_RATE && roi > 4) return '进一步观察 P1';
+      if (row.is_new && spend > 10 * USD_TO_CNY_RATE && roi < 2) return '新素材 立即停投 P2';
+      if (spend < 10 * USD_TO_CNY_RATE) return '低消耗素材';
+      if (!row.is_new && spend > 50 * USD_TO_CNY_RATE && roi < averageRoi && compareRoi !== null && roi < compareRoi) return '老素材 建议停投 P3';
+      return '常规观察';
+    }
+    function applyMaterialRecommendations(materials, compareMaterials, averageRoi = div(sum(materials, 'gmv'), sum(materials, 'spend'))) {
+      const compareMap = new Map(compareMaterials.map(row => [String(row.material_id || ''), row]));
+      return materials.map(row => ({
+        ...row,
+        action: materialRecommendation(row, averageRoi, compareMap)
+      }));
+    }
+    function percentileScores(list, metric, high = true) {''',
+        ),
+        (
+            '''    function productSelectorHtml(productRows, materials, rawRows, availableProducts, availableCategories) {
+      const head = `''',
+            '''    function productSelectorHtml(productRows, materials, rawRows, compareRawRows, averageRoi, availableProducts, availableCategories) {
+      const head = `''',
+        ),
+        (
+            '''      const details = productRows.map(summary => {
+        const productRawRows = rawRows.filter(row => (row.product || row.material_product || '-') === summary.product);
+        const rows = materialRows(productRawRows)
+          .filter(row => {''',
+            '''      const details = productRows.map(summary => {
+        const productRawRows = rawRows.filter(row => (row.product || row.material_product || '-') === summary.product);
+        const productCompareRawRows = compareRawRows.filter(row => (row.product || row.material_product || '-') === summary.product);
+        const rows = applyMaterialRecommendations(materialRows(productRawRows), materialRows(productCompareRawRows), averageRoi)
+          .filter(row => {''',
+        ),
+        (
+            '          <div class="table-wrap">${tableHtml(rows, topColumns, null)}</div>',
+            '          <div class="table-wrap">${tableHtml(rows, topColumns, null, { showMaterialCount: true })}</div>',
+        ),
+        (
+            '''      const productBoardFiltered = filterProductBoardRows(materials, qRows);
+      const productRows = productSummaryRows(productBoardFiltered.scopedMaterials, productBoardFiltered.scopedRawRows, materialPublishPeriod());
+      document.getElementById('productSelectorBlock').innerHTML = productSelectorHtml(productRows, productBoardFiltered.scopedMaterials, productBoardFiltered.scopedRawRows, productOptions(qRows), categoryOptions(qRows));''',
+            '''      const productBoardFiltered = filterProductBoardRows(materials, qRows);
+      const productBoardCompareFiltered = filterProductBoardRows(compareMaterials, cRows);
+      const averageRoi = div(sum(productBoardFiltered.scopedMaterials, 'gmv'), sum(productBoardFiltered.scopedMaterials, 'spend'));
+      const recommendedMaterials = applyMaterialRecommendations(productBoardFiltered.scopedMaterials, productBoardCompareFiltered.scopedMaterials, averageRoi);
+      const productRows = productSummaryRows(recommendedMaterials, productBoardFiltered.scopedRawRows, materialPublishPeriod());
+      document.getElementById('productSelectorBlock').innerHTML = productSelectorHtml(productRows, recommendedMaterials, productBoardFiltered.scopedRawRows, productBoardCompareFiltered.scopedRawRows, averageRoi, productOptions(qRows), categoryOptions(qRows));''',
+        ),
+        (
+            '''    function tableHtml(rows, columns, limit) {
+      const part = limit ? rows.slice(0, limit) : rows;
+      if (!part.length) return '<table><tbody><tr><td>暂无数据</td></tr></tbody></table>';
+      const head = columns.map(([key, label, kind]) => `<th data-key="${key}" data-kind="${kind}"><span class="th-label">${label}</span><span class="col-resize-handle" data-resize="1"></span></th>`).join('');
+      const body = part.map((row, index) => `<tr class="${row.is_new ? 'new-material' : ''}" data-order="${index}">` + columns.map(([key,, kind]) => {
+        const raw = row[key];
+        const sortValue = raw === undefined || raw === null ? '' : String(raw);
+        return `<td class="${['money','int','score','roi','ctr_pct'].includes(kind) ? 'num' : ''}" data-key="${key}" data-sort="${escapeHtml(sortValue)}">${cellWithCompare(row, key, kind)}</td>`;
+      }).join('') + '</tr>').join('');
+      return `<table data-sortable="1"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }''',
+            '''    function tableHtml(rows, columns, limit, options = {}) {
+      const part = limit ? rows.slice(0, limit) : rows;
+      const head = columns.map(([key, label, kind]) => `<th data-key="${key}" data-kind="${kind}"><span class="th-label">${label}</span><span class="col-resize-handle" data-resize="1"></span></th>`).join('');
+      const body = part.length ? part.map((row, index) => `<tr class="${row.is_new ? 'new-material' : ''}" data-order="${index}">` + columns.map(([key,, kind]) => {
+        const raw = row[key];
+        const sortValue = raw === undefined || raw === null ? '' : String(raw);
+        return `<td class="${['money','int','score','roi','ctr_pct'].includes(kind) ? 'num' : ''}" data-key="${key}" data-sort="${escapeHtml(sortValue)}">${cellWithCompare(row, key, kind)}</td>`;
+      }).join('') + '</tr>').join('') : `<tr><td colspan="${columns.length}">暂无数据</td></tr>`;
+      const foot = options.showMaterialCount
+        ? `<tfoot><tr><td colspan="${columns.length}" class="material-count-cell">当前筛选共 ${fmtInt(rows.length)} 条素材</td></tr></tfoot>`
+        : '';
+      return `<table data-sortable="1"><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table>`;
+    }''',
+        ),
+    ]
+    for old, new in replacements:
+        if old not in html_text:
+            raise ValueError(f"Material recommendation patch target not found: {old[:80]!r}")
+        html_text = html_text.replace(old, new, 1)
+    return html_text
+
+
 def enhance_html_with_trend_scaling(html_text: str) -> str:
     toolbar_css = """
     .trend-toolbar {
@@ -2019,6 +2128,7 @@ def main() -> None:
     html_text = enhance_html_with_overview_filter(html_text)
     html_text = enhance_html_with_system_paid_materials_compare(html_text)
     html_text = enhance_html_with_batch_post_id_filter(html_text)
+    html_text = enhance_html_with_material_recommendations(html_text)
     html_text = enhance_html_with_trend_scaling(html_text)
     html_text = enhance_html_with_interaction_polish(html_text)
     OUTPUT_PATH.write_text(html_text, encoding="utf-8")
