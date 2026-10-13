@@ -1112,6 +1112,104 @@ def enhance_html_with_system_paid_materials_compare(html_text: str) -> str:
     return html_text
 
 
+def enhance_html_with_interaction_polish(html_text: str) -> str:
+    polish_css = """
+    .cmp-card {
+      position: relative;
+      overflow: hidden;
+      transform: translateY(0) scale(1);
+      transition:
+        transform 180ms cubic-bezier(.2,.75,.25,1),
+        border-color 220ms ease,
+        box-shadow 220ms ease,
+        background-color 220ms ease;
+      will-change: transform;
+    }
+    .cmp-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(24, 119, 147, 0.42);
+      box-shadow: 0 8px 22px rgba(31, 65, 81, 0.09);
+    }
+    .cmp-card:active { transform: translateY(0) scale(.985); }
+    .cmp-card:focus-visible {
+      outline: 3px solid rgba(24, 119, 147, 0.18);
+      outline-offset: 2px;
+    }
+    .cmp-card.active {
+      transform: translateY(-1px);
+      box-shadow: inset 0 0 0 2px var(--brand), 0 8px 20px rgba(31, 65, 81, 0.08);
+    }
+    .cmp-card.active:active { transform: translateY(0) scale(.985); }
+    .cmp-card.active b { color: var(--brand); }
+    .trend-canvas-wrap {
+      overflow: hidden;
+      transform: translateY(0) scale(1);
+      opacity: 1;
+      transition: opacity 130ms ease, transform 130ms ease;
+      will-change: opacity, transform;
+    }
+    .trend-canvas-wrap.trend-refreshing {
+      opacity: .38;
+      transform: translateY(5px) scale(.997);
+    }
+    .trend-canvas-wrap.trend-entering {
+      animation: trend-chart-reveal 360ms cubic-bezier(.2,.75,.25,1) both;
+    }
+    @keyframes trend-chart-reveal {
+      from { opacity: .38; transform: translateY(7px) scale(.997); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cmp-card,
+      .trend-canvas-wrap {
+        transition: none !important;
+        animation: none !important;
+        transform: none !important;
+      }
+    }
+"""
+    polish_script = """
+<script>
+(function() {
+  const cardsRoot = document.getElementById('compareCards');
+  const trendWrap = document.querySelector('.trend-canvas-wrap');
+  if (!cardsRoot || !trendWrap) return;
+
+  let revealTimer = 0;
+  const syncPressedState = () => {
+    cardsRoot.querySelectorAll('.cmp-card[data-metric]').forEach(card => {
+      card.setAttribute('aria-pressed', card.classList.contains('active') ? 'true' : 'false');
+    });
+  };
+
+  syncPressedState();
+  new MutationObserver(syncPressedState).observe(cardsRoot, { childList: true, subtree: true });
+
+  cardsRoot.addEventListener('click', event => {
+    const card = event.target.closest('.cmp-card[data-metric]');
+    if (!card || !cardsRoot.contains(card)) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      requestAnimationFrame(syncPressedState);
+      return;
+    }
+
+    window.clearTimeout(revealTimer);
+    trendWrap.classList.remove('trend-entering');
+    trendWrap.classList.add('trend-refreshing');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      trendWrap.classList.remove('trend-refreshing');
+      trendWrap.classList.add('trend-entering');
+      syncPressedState();
+      revealTimer = window.setTimeout(() => trendWrap.classList.remove('trend-entering'), 420);
+    }));
+  }, true);
+})();
+</script>
+"""
+    html_text = html_text.replace("</style>", polish_css + "\n</style>", 1)
+    return html_text.replace("</body>", polish_script + "\n</body>", 1)
+
+
 def fetch_all_data() -> pd.DataFrame:
     last_error: Exception | None = None
     for attempt in range(1, 4):
@@ -1377,6 +1475,7 @@ def main() -> None:
     html_text = enhance_html_for_live_refresh(html_text)
     html_text = enhance_html_with_overview_filter(html_text)
     html_text = enhance_html_with_system_paid_materials_compare(html_text)
+    html_text = enhance_html_with_interaction_polish(html_text)
     OUTPUT_PATH.write_text(html_text, encoding="utf-8")
     print(f"宸茬敓鎴愶細{OUTPUT_PATH}")
     print(f"鏌ヨ鍛ㄦ湡锛歿query_period.text}")
