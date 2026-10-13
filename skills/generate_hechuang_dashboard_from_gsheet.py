@@ -101,31 +101,17 @@ def enhance_html_for_live_refresh(html_text: str) -> str:
   const SHEET_ID = "{SHEET_ID}";
   const ALL_DATA_GVIZ_URL = "https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:__allDataRefreshHandler&sheet=ALL_data&range=A1:AL300000";
   const DMS_GVIZ_URL = "https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:__dmsRefreshHandler&sheet=DMS&range=A1:CV10000";
-  // Source spend and GMV are in USD; dashboard monetary metrics are shown in CNY.
-  const USD_TO_CNY_RATE = 6.8;
+  // Source and dashboard monetary metrics are both in USD.
   const refreshBtn = document.getElementById('refreshNow');
   const refreshStatus = document.getElementById('refreshStatus');
   const updateTimeNode = document.querySelector('.update-time');
   const periodSummaryNode = document.querySelector('header > p');
-  const REFRESH_CACHE_VERSION = 1;
+  const REFRESH_CACHE_VERSION = 3;
   const REFRESH_CACHE_NAME = 'hechuang-dashboard-refresh-v1';
   const REFRESH_CACHE_KEY = 'hechuang-dashboard-refresh-v1';
   const REFRESH_CACHE_URL = window.location.origin && window.location.origin !== 'null'
     ? window.location.origin + '/__hechuang_cache__/latest.json'
     : '';
-
-  function scaleEmbeddedRows(rows) {{
-    if (!Array.isArray(rows)) return [];
-    return rows.map(row => {{
-      if (row && row.__usdToCnyRate === USD_TO_CNY_RATE) return row;
-      return {{
-        ...row,
-        spend: Math.max(0, Number(row?.spend || 0)) * USD_TO_CNY_RATE,
-        gmv: Math.max(0, Number(row?.gmv || 0)) * USD_TO_CNY_RATE,
-        __usdToCnyRate: USD_TO_CNY_RATE,
-      }};
-    }});
-  }}
 
   function setRefreshStatus(state) {{
     if (!refreshStatus) return;
@@ -156,7 +142,6 @@ def enhance_html_for_live_refresh(html_text: str) -> str:
     return Boolean(
       snapshot &&
       snapshot.version === REFRESH_CACHE_VERSION &&
-      snapshot.usdToCnyRate === USD_TO_CNY_RATE &&
       snapshot.refreshedAt &&
       Array.isArray(snapshot.queryRows) && snapshot.queryRows.length &&
       Array.isArray(snapshot.compareRows) && snapshot.compareRows.length &&
@@ -418,8 +403,8 @@ def enhance_html_for_live_refresh(html_text: str) -> str:
         source_url: normalizeText(row['URL']) || normalizeText(dms['url']) || '-',
         publish_date: publishDate,
         ad_form2: normalizeText(row['骞垮憡褰㈠紡2']),
-        spend: Math.max(0, toNumber(row['鑺辫垂閲戦锛圲SD锛?])) * USD_TO_CNY_RATE,
-        gmv: Math.max(0, toNumber(row['璐墿杞寲浠峰€?])) * USD_TO_CNY_RATE,
+        spend: Math.max(0, toNumber(row['鑺辫垂閲戦锛圲SD锛?])),
+        gmv: Math.max(0, toNumber(row['璐墿杞寲浠峰€?])),
         orders: Math.max(0, toNumber(row['璁㈠崟鏁?])),
         impressions: Math.max(0, toNumber(row['灞曠ず娆℃暟'])),
         clicks: Math.max(0, toNumber(row['鐐瑰嚮閲?])),
@@ -495,7 +480,6 @@ def enhance_html_for_live_refresh(html_text: str) -> str:
       embedded.newMaterialIds = Array.from(fixedNewMaterialIds);
       await writeCachedRefresh({{
         version: REFRESH_CACHE_VERSION,
-        usdToCnyRate: USD_TO_CNY_RATE,
         refreshedAt: now.toISOString(),
         queryPeriod: {{ ...periods.query }},
         comparePeriod: {{ ...periods.compare }},
@@ -985,8 +969,6 @@ def enhance_html_with_overview_filter(html_text: str) -> str:
   }
 
   patchGlobalRefresh();
-  embedded.queryRaw = scaleEmbeddedRows(embedded.queryRaw);
-  embedded.compareRaw = scaleEmbeddedRows(embedded.compareRaw);
   if (typeof window.refreshAllBoards === 'function') {
     window.refreshAllBoards(embedded.queryRaw || [], embedded.compareRaw || []);
   }
@@ -1419,11 +1401,11 @@ def enhance_html_with_material_recommendations(html_text: str) -> str:
       const roi = Number(row.roi || 0);
       const compare = compareMap.get(String(row.material_id || ''));
       const compareRoi = compare ? Number(compare.roi || 0) : null;
-      if (spend > 30 * USD_TO_CNY_RATE && roi > averageRoi * 1.5) return '潜力素材 P0';
-      if (spend > 20 * USD_TO_CNY_RATE && roi > 4) return '进一步观察 P1';
-      if (row.is_new && spend > 10 * USD_TO_CNY_RATE && roi < 2) return '新素材 立即停投 P2';
-      if (spend < 10 * USD_TO_CNY_RATE) return '低消耗素材';
-      if (!row.is_new && spend > 50 * USD_TO_CNY_RATE && roi < averageRoi && compareRoi !== null && roi < compareRoi) return '老素材 建议停投 P3';
+      if (spend > 30 && roi > averageRoi * 1.5) return '潜力素材 P0';
+      if (spend > 20 && roi > 4) return '进一步观察 P1';
+      if (row.is_new && spend > 10 && roi < 2) return '新素材 立即停投 P2';
+      if (spend < 10) return '低消耗素材';
+      if (!row.is_new && spend > 50 && roi < averageRoi && compareRoi !== null && roi < compareRoi) return '老素材 建议停投 P3';
       return '常规观察';
     }
     function applyMaterialRecommendations(materials, compareMaterials, averageRoi = div(sum(materials, 'gmv'), sum(materials, 'spend'))) {
