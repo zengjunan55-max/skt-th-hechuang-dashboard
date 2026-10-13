@@ -272,21 +272,24 @@
       font-weight: 700;
       margin-left: auto;
     }
-    .product-tools input[type="text"] {
+    .product-tools textarea {
       min-width: 220px;
       flex: 0 0 220px;
-      height: 54px;
+      min-height: 54px;
+      max-height: 140px;
       border: 1px solid #d7dee8;
       border-radius: 12px;
       background: #fff;
       color: #445468;
-      padding: 0 18px;
+      padding: 10px 14px;
       font: inherit;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 500;
+      line-height: 1.45;
       box-sizing: border-box;
+      resize: vertical;
     }
-    .product-tools input[type="text"]::placeholder { color: #8b98a9; }
+    .product-tools textarea::placeholder { color: #8b98a9; }
     .multi-select {
       position: relative;
       min-width: 220px;
@@ -1380,6 +1383,7 @@
     let lastTrendCompareRows = [];
     let activeProductSelections = [];
     let activeProductPostIdFilter = '';
+    let postIdFilterDebounceTimer = null;
     let activeProductCategorySelections = [];
     let activeMaterialPublishStart = '';
     let activeMaterialPublishEnd = '';
@@ -1679,8 +1683,25 @@
       if (text === '其他') return false;
       return true;
     }
+    function parsePostIdFilters(value) {
+      const text = String(value || '').trim();
+      if (!text) return [];
+      const extractedIds = text.match(/TH-[A-Z0-9_-]+/gi);
+      const candidates = extractedIds && extractedIds.length
+        ? extractedIds
+        : text.split(/[\s,，;；|]+/);
+      return Array.from(new Set(candidates
+        .map(item => String(item || '').trim().toLowerCase())
+        .filter(item => item && !/^[-:]+$/.test(item))));
+    }
+    function matchesPostIdFilter(value, filters) {
+      const postId = String(value || '').trim().toLowerCase();
+      if (!filters.length) return true;
+      if (!postId) return false;
+      return filters.some(filter => filters.length === 1 ? postId.includes(filter) : postId === filter);
+    }
     function filterProductBoardRows(materials, rawRows) {
-      const postIdKeyword = String(activeProductPostIdFilter || '').trim().toLowerCase();
+      const postIdFilters = parsePostIdFilters(activeProductPostIdFilter);
       const selectedProducts = new Set(activeProductSelections.map(item => String(item || '').trim()).filter(Boolean));
       const selectedCategories = new Set(activeProductCategorySelections.map(item => String(item || '').trim()).filter(Boolean));
       const scopedRawRows = rawRows.filter(row => {
@@ -1688,10 +1709,7 @@
         const category = productCategory(product);
         if (selectedProducts.size && !selectedProducts.has(String(product))) return false;
         if (selectedCategories.size && !selectedCategories.has(String(category))) return false;
-        if (postIdKeyword) {
-          const postId = String(row.post_id || '').trim().toLowerCase();
-          if (!postId.includes(postIdKeyword)) return false;
-        }
+        if (!matchesPostIdFilter(row.post_id, postIdFilters)) return false;
         return true;
       });
       const allowedMaterialIds = new Set(scopedRawRows.map(row => String(row.material_id || '').trim()).filter(Boolean));
@@ -1699,9 +1717,9 @@
         if (!allowedMaterialIds.has(String(row.material_id || '').trim())) return false;
         if (selectedProducts.size && !selectedProducts.has(String(row.product || ''))) return false;
         if (selectedCategories.size && !selectedCategories.has(String(productCategory(row.product)))) return false;
-        if (postIdKeyword) {
-          const joinedPostIds = Array.isArray(row.post_ids) ? row.post_ids.join(' ') : '';
-          if (!joinedPostIds.toLowerCase().includes(postIdKeyword)) return false;
+        if (postIdFilters.length) {
+          const postIds = Array.isArray(row.post_ids) ? row.post_ids : [];
+          if (!postIds.some(postId => matchesPostIdFilter(postId, postIdFilters))) return false;
         }
         return true;
       });
@@ -1817,7 +1835,7 @@
           <div class="table-wrap">${tableHtml(rows, topColumns, null)}</div>
         </details>`;
       }).join('');
-      return `<div class="product-tools"><label>品类筛选</label>${multiSelectHtml('productCategoryFilter', '品类', availableCategories, activeProductCategorySelections, '搜索选择品类')}<label>产品筛选</label>${multiSelectHtml('productPicker', '产品', availableProducts, activeProductSelections, '搜索选择产品')}<label for="productPostIdFilter">帖子编号</label><input id="productPostIdFilter" type="text" placeholder="输入帖子编号筛选" value="${escapeHtml(activeProductPostIdFilter)}"><button type="button" class="collapse-all-btn" id="collapseProductDetails">一键收起</button></div><div class="product-list-board">${head}<div id="productDetails">${details}</div></div>`;
+      return `<div class="product-tools"><label>品类筛选</label>${multiSelectHtml('productCategoryFilter', '品类', availableCategories, activeProductCategorySelections, '搜索选择品类')}<label>产品筛选</label>${multiSelectHtml('productPicker', '产品', availableProducts, activeProductSelections, '搜索选择产品')}<label for="productPostIdFilter">帖子编号（多值）</label><textarea id="productPostIdFilter" rows="2" spellcheck="false" placeholder="粘贴多个帖子编号">${escapeHtml(activeProductPostIdFilter)}</textarea><button type="button" class="collapse-all-btn" id="collapseProductDetails">一键收起</button></div><div class="product-list-board">${head}<div id="productDetails">${details}</div></div>`;
     }
     function topSectionsHtml(materials, key, titleSuffix) {
       const groups = summaryRows(materials, key);
@@ -1834,7 +1852,15 @@
         postIdInput.addEventListener('input', () => {
           activeProductPostIdFilter = postIdInput.value || '';
           syncProductListFilterState();
-          refreshAllBoards(currentRows().qRows, currentRows().cRows);
+          clearTimeout(postIdFilterDebounceTimer);
+          postIdFilterDebounceTimer = setTimeout(() => {
+            refreshAllBoards(currentRows().qRows, currentRows().cRows);
+            const restoredInput = document.getElementById('productPostIdFilter');
+            if (restoredInput) {
+              restoredInput.focus();
+              restoredInput.setSelectionRange(restoredInput.value.length, restoredInput.value.length);
+            }
+          }, 180);
         });
       }
       const collapseBtn = document.getElementById('collapseProductDetails');
