@@ -1247,6 +1247,151 @@ def enhance_html_with_system_paid_materials_compare(html_text: str) -> str:
     return html_text
 
 
+def enhance_html_with_batch_post_id_filter(html_text: str) -> str:
+    replacements = [
+        (
+            r'''    .product-tools input[type="text"] {
+      min-width: 220px;
+      flex: 0 0 220px;
+      height: 54px;
+      border: 1px solid #d7dee8;
+      border-radius: 12px;
+      background: #fff;
+      color: #445468;
+      padding: 0 18px;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 500;
+      box-sizing: border-box;
+    }
+    .product-tools input[type="text"]::placeholder { color: #8b98a9; }''',
+            r'''    .product-tools textarea {
+      min-width: 220px;
+      flex: 0 0 220px;
+      min-height: 54px;
+      max-height: 140px;
+      border: 1px solid #d7dee8;
+      border-radius: 12px;
+      background: #fff;
+      color: #445468;
+      padding: 10px 14px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.45;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    .product-tools textarea::placeholder { color: #8b98a9; }''',
+        ),
+        (
+            "    let activeProductPostIdFilter = '';",
+            "    let activeProductPostIdFilter = '';\n    let postIdFilterDebounceTimer = null;",
+        ),
+        (
+            r'''    function filterProductBoardRows(materials, rawRows) {
+      const postIdKeyword = String(activeProductPostIdFilter || '').trim().toLowerCase();
+      const selectedProducts = new Set(activeProductSelections.map(item => String(item || '').trim()).filter(Boolean));
+      const selectedCategories = new Set(activeProductCategorySelections.map(item => String(item || '').trim()).filter(Boolean));
+      const scopedRawRows = rawRows.filter(row => {
+        const product = row.product || row.material_product || '-';
+        const category = productCategory(product);
+        if (selectedProducts.size && !selectedProducts.has(String(product))) return false;
+        if (selectedCategories.size && !selectedCategories.has(String(category))) return false;
+        if (postIdKeyword) {
+          const postId = String(row.post_id || '').trim().toLowerCase();
+          if (!postId.includes(postIdKeyword)) return false;
+        }
+        return true;
+      });
+      const allowedMaterialIds = new Set(scopedRawRows.map(row => String(row.material_id || '').trim()).filter(Boolean));
+      const scopedMaterials = materials.filter(row => {
+        if (!allowedMaterialIds.has(String(row.material_id || '').trim())) return false;
+        if (selectedProducts.size && !selectedProducts.has(String(row.product || ''))) return false;
+        if (selectedCategories.size && !selectedCategories.has(String(productCategory(row.product)))) return false;
+        if (postIdKeyword) {
+          const joinedPostIds = Array.isArray(row.post_ids) ? row.post_ids.join(' ') : '';
+          if (!joinedPostIds.toLowerCase().includes(postIdKeyword)) return false;
+        }
+        return true;
+      });
+      return { scopedMaterials, scopedRawRows };
+    }''',
+            r'''    function parsePostIdFilters(value) {
+      const text = String(value || '').trim();
+      if (!text) return [];
+      const extractedIds = text.match(/TH-[A-Z0-9_-]+/gi);
+      const candidates = extractedIds && extractedIds.length
+        ? extractedIds
+        : text.split(/[\s,，;；|]+/);
+      return Array.from(new Set(candidates
+        .map(item => String(item || '').trim().toLowerCase())
+        .filter(item => item && !/^[-:]+$/.test(item))));
+    }
+    function matchesPostIdFilter(value, filters) {
+      const postId = String(value || '').trim().toLowerCase();
+      if (!filters.length) return true;
+      if (!postId) return false;
+      return filters.some(filter => filters.length === 1 ? postId.includes(filter) : postId === filter);
+    }
+    function filterProductBoardRows(materials, rawRows) {
+      const postIdFilters = parsePostIdFilters(activeProductPostIdFilter);
+      const selectedProducts = new Set(activeProductSelections.map(item => String(item || '').trim()).filter(Boolean));
+      const selectedCategories = new Set(activeProductCategorySelections.map(item => String(item || '').trim()).filter(Boolean));
+      const scopedRawRows = rawRows.filter(row => {
+        const product = row.product || row.material_product || '-';
+        const category = productCategory(product);
+        if (selectedProducts.size && !selectedProducts.has(String(product))) return false;
+        if (selectedCategories.size && !selectedCategories.has(String(category))) return false;
+        if (!matchesPostIdFilter(row.post_id, postIdFilters)) return false;
+        return true;
+      });
+      const allowedMaterialIds = new Set(scopedRawRows.map(row => String(row.material_id || '').trim()).filter(Boolean));
+      const scopedMaterials = materials.filter(row => {
+        if (!allowedMaterialIds.has(String(row.material_id || '').trim())) return false;
+        if (selectedProducts.size && !selectedProducts.has(String(row.product || ''))) return false;
+        if (selectedCategories.size && !selectedCategories.has(String(productCategory(row.product)))) return false;
+        if (postIdFilters.length) {
+          const postIds = Array.isArray(row.post_ids) ? row.post_ids : [];
+          if (!postIds.some(postId => matchesPostIdFilter(postId, postIdFilters))) return false;
+        }
+        return true;
+      });
+      return { scopedMaterials, scopedRawRows };
+    }''',
+        ),
+        (
+            r'''<label for="productPostIdFilter">帖子编号</label><input id="productPostIdFilter" type="text" placeholder="输入帖子编号筛选" value="${escapeHtml(activeProductPostIdFilter)}">''',
+            r'''<label for="productPostIdFilter">帖子编号（多值）</label><textarea id="productPostIdFilter" rows="2" spellcheck="false" placeholder="粘贴多个帖子编号">${escapeHtml(activeProductPostIdFilter)}</textarea>''',
+        ),
+        (
+            r'''        postIdInput.addEventListener('input', () => {
+          activeProductPostIdFilter = postIdInput.value || '';
+          syncProductListFilterState();
+          refreshAllBoards(currentRows().qRows, currentRows().cRows);
+        });''',
+            r'''        postIdInput.addEventListener('input', () => {
+          activeProductPostIdFilter = postIdInput.value || '';
+          syncProductListFilterState();
+          clearTimeout(postIdFilterDebounceTimer);
+          postIdFilterDebounceTimer = setTimeout(() => {
+            refreshAllBoards(currentRows().qRows, currentRows().cRows);
+            const restoredInput = document.getElementById('productPostIdFilter');
+            if (restoredInput) {
+              restoredInput.focus();
+              restoredInput.setSelectionRange(restoredInput.value.length, restoredInput.value.length);
+            }
+          }, 180);
+        });''',
+        ),
+    ]
+    for old, new in replacements:
+        if old not in html_text:
+            raise ValueError(f"Batch post ID filter patch target not found: {old[:80]!r}")
+        html_text = html_text.replace(old, new, 1)
+    return html_text
+
+
 def enhance_html_with_trend_scaling(html_text: str) -> str:
     toolbar_css = """
     .trend-toolbar {
@@ -1873,6 +2018,7 @@ def main() -> None:
     html_text = enhance_html_for_live_refresh(html_text)
     html_text = enhance_html_with_overview_filter(html_text)
     html_text = enhance_html_with_system_paid_materials_compare(html_text)
+    html_text = enhance_html_with_batch_post_id_filter(html_text)
     html_text = enhance_html_with_trend_scaling(html_text)
     html_text = enhance_html_with_interaction_polish(html_text)
     OUTPUT_PATH.write_text(html_text, encoding="utf-8")
