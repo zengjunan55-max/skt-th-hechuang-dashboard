@@ -453,6 +453,14 @@
     }
     .product-list-head span:last-child,
     .product-summary-grid span:last-child { border-right: 0; }
+    .product-total-row {
+      background: #f2f5f8;
+      color: #354152;
+      font-size: 14px;
+      font-weight: 800;
+      border-top: 2px solid var(--brand);
+    }
+    .product-total-row span { background: inherit; }
     details.product-detail {
       border-bottom: 1px solid var(--line);
       margin: 0;
@@ -1805,6 +1813,37 @@
         };
       }).sort((a, b) => b.spend - a.spend || b.gmv - a.gmv);
     }
+    function productTotalRow(rawRows, period) {
+      const m = metrics(rawRows);
+      const paidMaterialIds = new Set(
+        rawRows
+          .filter(row => Number(row.spend || 0) > 0)
+          .map(row => String(row.material_id || '').trim())
+          .filter(Boolean)
+      );
+      const newRows = rawRows.filter(row => inPublishRange(row, period));
+      const newMaterialIds = new Set(
+        newRows
+          .filter(row => Number(row.spend || 0) > 0)
+          .map(row => String(row.material_id || '').trim())
+          .filter(Boolean)
+      );
+      const newMaterialSpend = sum(newRows, 'spend');
+      return {
+        product: '总计',
+        materials: paidMaterialIds.size,
+        new_materials: newMaterialIds.size,
+        spend: m.spend,
+        spend_share: m.spend ? 1 : 0,
+        new_material_spend: newMaterialSpend,
+        new_material_spend_share: div(newMaterialSpend, m.spend),
+        roi: m.roi,
+        cpm: m.cpm,
+        ctr: m.ctr,
+        gmv: m.gmv,
+        impressions: m.impressions,
+      };
+    }
     function multiSelectHtml(id, label, options, selectedValues, placeholder) {
       const selected = Array.isArray(selectedValues) ? selectedValues : [];
       const selectedSet = new Set(selected.map(item => String(item || '').trim()).filter(Boolean));
@@ -1869,7 +1908,22 @@
           <div class="table-wrap">${tableHtml(rows, materialColumns, null, { showMaterialCount: true })}</div>
         </details>`;
       }).join('');
-      return `<div class="product-tools"><label>品类筛选</label>${multiSelectHtml('productCategoryFilter', '品类', availableCategories, activeProductCategorySelections, '搜索选择品类')}<label>产品筛选</label>${multiSelectHtml('productPicker', '产品', availableProducts, activeProductSelections, '搜索选择产品')}<label for="productPostIdFilter">帖子编号（多值）</label><textarea id="productPostIdFilter" rows="2" spellcheck="false" placeholder="粘贴多个帖子编号">${escapeHtml(activeProductPostIdFilter)}</textarea><button type="button" class="collapse-all-btn" id="collapseProductDetails">一键收起</button></div><div class="product-list-board">${head}<div id="productDetails">${details}</div></div>`;
+      const total = productTotalRow(rawRows, materialPublishPeriod());
+      const totalHtml = `<div class="product-summary-grid product-total-row">
+        <span class="product-name">${total.product}</span>
+        <span class="product-num">${fmtInt(total.materials)}</span>
+        <span class="product-num">${fmtInt(total.new_materials)}</span>
+        <span class="product-num">${fmtMoney(total.spend)}</span>
+        <span class="product-num">${fmtPct(total.spend_share)}</span>
+        <span class="product-num">${fmtMoney(total.new_material_spend)}</span>
+        <span class="product-num">${fmtPct(total.new_material_spend_share)}</span>
+        <span class="product-num">${total.roi.toFixed(2)}</span>
+        <span class="product-num">${fmtMoney(total.cpm)}</span>
+        <span class="product-num">${fmtCtrPct(total.ctr)}</span>
+        <span class="product-num">${fmtMoney(total.gmv)}</span>
+        <span class="product-num">${fmtInt(total.impressions)}</span>
+      </div>`;
+      return `<div class="product-tools"><label>品类筛选</label>${multiSelectHtml('productCategoryFilter', '品类', availableCategories, activeProductCategorySelections, '搜索选择品类')}<label>产品筛选</label>${multiSelectHtml('productPicker', '产品', availableProducts, activeProductSelections, '搜索选择产品')}<label for="productPostIdFilter">帖子编号（多值）</label><textarea id="productPostIdFilter" rows="2" spellcheck="false" placeholder="粘贴多个帖子编号">${escapeHtml(activeProductPostIdFilter)}</textarea><button type="button" class="collapse-all-btn" id="collapseProductDetails">一键收起</button></div><div class="product-list-board">${head}<div id="productDetails">${details}</div>${totalHtml}</div>`;
     }
     function topSectionsHtml(materials, key, titleSuffix) {
       const groups = summaryRows(materials, key);
